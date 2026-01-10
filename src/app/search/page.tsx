@@ -9,7 +9,7 @@ type SearchSource = '1tamilmv' | 'tpb' | '1337x' | 'rutracker' | 'all';
 export default function SearchPage() {
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<any[]>([]);
-    const [loading, setLoading] = useState<{ tamilmv: boolean; torrents: boolean }>({ tamilmv: false, torrents: false });
+    const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [source, setSource] = useState<SearchSource>('all');
     const [blockedSources, setBlockedSources] = useState<string[]>([]);
@@ -45,7 +45,7 @@ export default function SearchPage() {
             // Define fetchers - USE DOMAINS FROM STATE
             // 1. Search 1TamilMV (via internal proxy)
             const fetch1TamilMV = async () => {
-                setLoading(prev => ({ ...prev, tamilmv: true }));
+                // Streaming results directly to state
                 try {
                     // Using internal API route which proxies to port 3007 (server-side)
                     const d = encodeURIComponent(domains['1tamilmv']);
@@ -62,13 +62,13 @@ export default function SearchPage() {
                     console.error('1TamilMV Error:', e);
                     setBlockedSources(prev => [...prev, '1TamilMV']);
                 } finally {
-                    setLoading(prev => ({ ...prev, tamilmv: false }));
+                    // Done with 1TamilMV
                 }
             };
 
             // 2. Search Multi-Source (TPB/1337x/RuTracker) via internal proxy
             const fetchMultiSearch = async (srcParam: string) => {
-                setLoading(prev => ({ ...prev, torrents: true }));
+                // Streaming results directly to state
                 try {
                     const tpb = encodeURIComponent(domains['tpb']);
                     const x1337 = encodeURIComponent(domains['1337x']);
@@ -93,37 +93,20 @@ export default function SearchPage() {
                 } catch (e) {
                     console.error('Torrent API Error:', e);
                 } finally {
-                    setLoading(prev => ({ ...prev, torrents: false }));
+                    // Done with multi-search
                 }
             };
 
-            // Execution Logic
+            // Execution Logic - results stream directly to state
             if (source === 'all') {
                 await Promise.all([
                     fetch1TamilMV(),
                     fetchMultiSearch('all')
                 ]);
-                combinedResults = [...r1, ...r2];
             } else if (source === '1tamilmv') {
-                combinedResults = await fetch1TamilMV();
+                await fetch1TamilMV();
             } else {
-                combinedResults = await fetchMultiSearch(source);
-            }
-
-            setBlockedSources(allBlocked);
-
-            if (combinedResults.length > 0) {
-                // Deduplicate by link or title? For now just show all.
-                // Sort by seeders/relevance (1TamilMV has no seeders usually, put them top or mixed?)
-                // Let's sort simply: items with seeders > 0 first, then date.
-                // Actually 1TamilMV results often lack seeders in search list.
-                setResults(combinedResults);
-            } else {
-                if (allBlocked.length > 0) {
-                    // Handled by UI below
-                } else {
-                    setError('No results found from any source.');
-                }
+                await fetchMultiSearch(source);
             }
         } catch (err) {
             setError('Search service error. Check console.');
