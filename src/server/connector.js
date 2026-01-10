@@ -66,11 +66,11 @@ app.get('/api/search', async (req, res) => {
         for (const searchUrl of searchUrls) {
             console.log(`[Connector] Trying: ${searchUrl}`);
             try {
-                await page.goto(searchUrl, { waitUntil: 'networkidle0', timeout: 30000 });
+                await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
 
                 // Wait for results
                 try {
-                    await page.waitForSelector('.ipsStreamItem_title, .ipsDataItem_title, h4.ipsDataItem_title', { timeout: 10000 });
+                    await page.waitForSelector('.ipsStreamItem_title, .ipsDataItem_title, h4.ipsDataItem_title', { timeout: 5000 });
                 } catch (e) {
                     console.log('[Connector] No results selector found, trying next pattern...');
                     continue;
@@ -115,7 +115,7 @@ app.get('/api/search', async (req, res) => {
                 const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(googleQuery)}`;
                 console.log(`[Connector] Google Fallback: ${googleUrl}`);
 
-                await page.goto(googleUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await page.goto(googleUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
 
                 results = await page.evaluate((currentDomain) => {
                     const items = document.querySelectorAll('.g');
