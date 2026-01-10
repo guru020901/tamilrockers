@@ -328,7 +328,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch }) => {
                                 controls={true}
                                 width="100%"
                                 height="100%"
-                                playerRef={playerRef}
+                                playerRef={playerRef as React.RefObject<HTMLVideoElement>}
                                 style={{ outline: 'none' }}
                             />
                         </div>
