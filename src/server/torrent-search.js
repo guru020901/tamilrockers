@@ -23,10 +23,20 @@ const PORT = 3008;
 let browser = null;
 
 const getBrowser = async () => {
-    if (!browser) {
+    if (!browser || !browser.isConnected()) {
+        console.log('[TorrentSearch] Launching new browser...');
         browser = await puppeteer.launch({
             headless: 'new',
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage', // Critical for Docker
+                '--disable-gpu',
+                '--no-first-run',
+                '--no-zygote',
+            ],
+            protocolTimeout: 60000
         });
     }
     return browser;

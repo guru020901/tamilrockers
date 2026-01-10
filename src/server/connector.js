@@ -14,8 +14,17 @@ async function getBrowser() {
     if (!browser || !browser.isConnected()) {
         console.log('[Connector] Launching new browser...');
         browser = await puppeteer.launch({
-            headless: true, // Use false if debugging needed
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            headless: true,
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined, // Use system chromium if env var set
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage', // Critical for Docker
+                '--disable-gpu',
+                '--no-first-run',
+                '--no-zygote',
+            ],
+            protocolTimeout: 60000 // Increase connection timeout
         });
     }
     return browser;
