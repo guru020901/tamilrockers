@@ -1,5 +1,5 @@
-# Use Node 18 base image
-FROM node:18-bullseye-slim
+# Use Node 20 LTS for Next.js 16 and React 19 compatibility
+FROM node:20-bullseye-slim
 
 # Install dependencies for Puppeteer (Chrome) and Supervisor
 # We install chromium instead of full chrome to save space/complexity, 
