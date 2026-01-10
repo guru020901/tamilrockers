@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Find the largest file (video)
-    const file = torrent.files.reduce((a, b) => (a.length > b.length ? a : b));
+    const file = torrent.files.reduce((a: any, b: any) => (a.length > b.length ? a : b));
     console.log('[API] Streaming file:', file.name);
 
     // Parse Range Header
