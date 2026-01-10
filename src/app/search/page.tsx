@@ -9,7 +9,7 @@ type SearchSource = '1tamilmv' | 'tpb' | '1337x' | 'rutracker' | 'all';
 export default function SearchPage() {
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<any[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState<{ tamilmv: boolean; torrents: boolean }>({ tamilmv: false, torrents: false });
     const [error, setError] = useState<string | null>(null);
     const [source, setSource] = useState<SearchSource>('all');
     const [blockedSources, setBlockedSources] = useState<string[]>([]);
