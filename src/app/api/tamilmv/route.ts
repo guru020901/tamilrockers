@@ -10,11 +10,15 @@ export async function GET(request: Request) {
     }
 
     try {
-        // Determine backend URL (Server-side call)
-        // In Docker/Production, this is localhost:3007
-        const backendUrl = `http://localhost:3007/api/search?q=${encodeURIComponent(query)}&domain=${encodeURIComponent(domain || '')}`;
+        // Use BACKEND_URL env var for production (Render.com), fallback to localhost for local dev
+        const backendBase = process.env.BACKEND_URL || 'http://localhost:3007';
+        const backendUrl = `${backendBase}/api/search?q=${encodeURIComponent(query)}&domain=${encodeURIComponent(domain || '')}`;
 
-        const res = await fetch(backendUrl);
+        const res = await fetch(backendUrl, {
+            headers: { 'Accept': 'application/json' },
+            // Add timeout for production
+            signal: AbortSignal.timeout(30000)
+        });
         const data = await res.json();
 
         return NextResponse.json(data);

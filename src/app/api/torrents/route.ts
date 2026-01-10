@@ -5,11 +5,15 @@ export async function GET(request: Request) {
     const queryString = searchParams.toString();
 
     try {
-        // Determine backend URL (Server-side call)
-        // In Docker/Production, this is localhost:3008
-        const backendUrl = `http://localhost:3008/search?${queryString}`;
+        // Use BACKEND_TORRENTS_URL env var for production (Render.com), fallback to localhost for local dev
+        const backendBase = process.env.BACKEND_TORRENTS_URL || 'http://localhost:3008';
+        const backendUrl = `${backendBase}/search?${queryString}`;
 
-        const res = await fetch(backendUrl);
+        const res = await fetch(backendUrl, {
+            headers: { 'Accept': 'application/json' },
+            // Add timeout for production
+            signal: AbortSignal.timeout(30000)
+        });
         const data = await res.json();
 
         return NextResponse.json(data);
