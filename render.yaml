@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: torrentrockers
+    env: docker
+    plan: free
+    dockerContext: .
+    dockerfilePath: Dockerfile
+    # render.yaml explicitly allows defining environment variables
+    envVars:
+      - key: PORT
+        value: 3000

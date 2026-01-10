@@ -1,66 +1,43 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+import React from 'react';
+import MovieCard from '@/components/MovieCard';
+import HeroSection from '@/components/HeroSection';
+import { headers } from 'next/headers';
 
-export default function Home() {
+async function getMovies() {
+  // In a real app with external API, we would fetch(API_URL).
+  // Here we can import directly or fetch our own API.
+  // Since we are Server Component, we can import data directly if we want,
+  // but let's simulate fetch to be "architecturally correct" for the API route plan.
+  // However, fetching localhost in build time or without absolute URL can be tricky.
+  // So we will import the logic or data directly for stability in this demo.
+  // We'll trust the plan and use the API route via absolute URL or just import data.
+  // Reverting to direct import to avoid "localhost" port guessing/fetch errors in dev.
+  const movies = (await import('@/data/movies.json')).default;
+  return movies;
+}
+
+export default async function Home() {
+  const movies = await getMovies();
+  const heroMovie = movies[0];
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main style={{ paddingBottom: '50px' }}>
+      {heroMovie && <HeroSection movie={heroMovie} />}
+
+      <section style={{ padding: '20px 4%' }}>
+        <h2 style={{ fontSize: '1.5rem', fontWeight: 600, marginBottom: '20px', color: '#e5e5e5' }}>
+          Latest Releases
+        </h2>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+          gap: '20px'
+        }}>
+          {movies.map((movie) => (
+            <MovieCard key={movie.id} movie={movie} />
+          ))}
         </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      </section>
+    </main>
   );
 }
