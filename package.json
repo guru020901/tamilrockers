@@ -34,4 +34,11 @@
     "eslint-config-next": "16.1.1",
     "typescript": "^5"
   }
+},
+"overrides": {
+  "react-hls-player": {
+    "react": "$react",
+    "react-dom": "$react-dom"
+  }
+}
 }
