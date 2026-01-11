@@ -12,11 +12,13 @@ const USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
 ];
 
-// Free CORS Proxy endpoints
+// Free CORS Proxy endpoints (Rotation Pool)
 const CORS_PROXIES = [
     (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
     (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
     (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+    (url: string) => `https://thingproxy.freeboard.io/fetch/${url}`,
+    (url: string) => `https://api.cors.lol/?url=${encodeURIComponent(url)}`,
 ];
 
 /**

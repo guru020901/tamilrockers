@@ -81,18 +81,19 @@ export async function GET(request: Request) {
 
         // Alternative: Look for direct post links if article pattern fails
         if (results.length === 0) {
-            const postLinkPattern = /<a[^>]*href="(https?:\/\/.*1tamilblasters.*\/.*)"[^>]*>([^<]{10,})<\/a>/gi;
+            // Updated Regex: Matches any URL that looks like a post (at least 2 path segments)
+            const postLinkPattern = /<a[^>]*href="(https?:\/\/[^"]+\/[^"]+)"[^>]*>([^<]{10,})<\/a>/gi;
             const seen = new Set();
 
             while ((match = postLinkPattern.exec(html)) !== null) {
                 const link = match[1].replace(/&amp;/g, '&');
                 const title = match[2].trim();
 
-                // Skip duplicates and non-content links
-                if (seen.has(link) || link.includes('/category/') || link.includes('/tag/')) continue;
+                // Skip duplicates, non-content links, and simple pages
+                if (seen.has(link) || link.includes('/category/') || link.includes('/tag/') || link.includes('/page/') || link.includes('wp-json')) continue;
                 seen.add(link);
 
-                if (title.length > 10) {
+                if (title.length > 5) { // Relaxed length check
                     const idMatch = link.match(/\/(\d+)\/?$/) || link.match(/\/([^\/]+)\/?$/);
                     const id = idMatch ? idMatch[1] : `tb-${results.length}`;
 
