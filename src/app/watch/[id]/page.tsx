@@ -101,8 +101,8 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                 </div>
 
                 <div style={{ marginBottom: '30px' }}>
-                    {/* Pass IMDB ID and full MAGNET LIST for swarm hopping */}
-                    <VideoPlayer magnets={movie.magnets || []} imdb={movie.imdb} watch={movie.watch} />
+                    {/* Pass IMDB ID, MAGNET LIST, watch URL and TITLE for auto IMDB lookup */}
+                    <VideoPlayer magnets={movie.magnets || []} imdb={movie.imdb} watch={movie.watch} title={movie.title} />
                 </div>
 
                 <div style={{ background: '#1f1f1f', padding: '20px', borderRadius: '8px' }}>
