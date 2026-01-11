@@ -86,7 +86,7 @@ export async function compressResponse(data: any): Promise<ArrayBuffer> {
     }
 
     // Fallback: return uncompressed
-    return new TextEncoder().encode(jsonString);
+    return new TextEncoder().encode(jsonString).buffer;
 }
 
 /**
