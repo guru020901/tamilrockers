@@ -32,7 +32,17 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
 
                 if (url) {
                     try {
-                        const res = await fetch(`http://localhost:3007/api/details?url=${encodeURIComponent(url)}`);
+                        let apiUrl;
+                        // Route based on domain
+                        if (url.includes('1tamilblasters') || url.includes('tamilblasters')) {
+                            apiUrl = `/api/tamilblasters/details?url=${encodeURIComponent(url)}`;
+                        } else {
+                            // Default to 1TamilMV (Legacy direct port call - should be proxied ideally)
+                            apiUrl = `http://localhost:3007/api/details?url=${encodeURIComponent(url)}`;
+                        }
+
+                        console.log(`Fetching details from: ${apiUrl}`);
+                        const res = await fetch(apiUrl);
                         const data = await res.json();
 
                         if (data.success) {

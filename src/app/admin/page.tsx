@@ -7,6 +7,7 @@ import Link from 'next/link';
 export default function AdminPage() {
     const [domains, setDomains] = useState({
         '1tamilmv': 'https://1tamilmv.do',
+        '1tamilblasters': 'https://1tamilblasters.business',
         'tpb': 'https://thepibay.site',
         '1337x': 'https://1337x.to',
         'rutracker': 'rutracker.org'
@@ -31,6 +32,7 @@ export default function AdminPage() {
     const handleReset = () => {
         const defaults = {
             '1tamilmv': 'https://1tamilmv.do',
+            '1tamilblasters': 'https://1tamilblasters.business',
             'tpb': 'https://thepibay.site',
             '1337x': 'https://1337x.to',
             'rutracker': 'rutracker.org'
@@ -73,6 +75,24 @@ export default function AdminPage() {
                             value={domains['1tamilmv']}
                             onChange={(e) => setDomains({ ...domains, '1tamilmv': e.target.value })}
                             placeholder="https://1tamilmv.do"
+                            style={{
+                                width: '100%', padding: '12px 15px', borderRadius: '8px',
+                                border: '1px solid #444', background: '#222', color: '#fff',
+                                fontSize: '1rem'
+                            }}
+                        />
+                    </div>
+
+                    {/* 1TamilBlasters */}
+                    <div>
+                        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: '#ff9800' }}>
+                            1TamilBlasters Domain
+                        </label>
+                        <input
+                            type="text"
+                            value={domains['1tamilblasters']}
+                            onChange={(e) => setDomains({ ...domains, '1tamilblasters': e.target.value })}
+                            placeholder="https://1tamilblasters.business"
                             style={{
                                 width: '100%', padding: '12px 15px', borderRadius: '8px',
                                 border: '1px solid #444', background: '#222', color: '#fff',

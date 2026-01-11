@@ -249,8 +249,25 @@ export default function SearchPage() {
                                 </span>
                             </div>
 
+                            {/* Title Link */}
                             <h3 style={{ fontSize: '1rem', marginBottom: '10px', lineHeight: '1.4', height: '2.8em', overflow: 'hidden' }}>
-                                {(item.title || '').replace(/Download|Tamil|Review|Online/g, '').trim()}
+                                {(item.source === '1tamilmv' || item.source === '1tamilblasters' || item.link?.includes('topic')) ? (
+                                    <Link
+                                        href={`/watch/topic-${item.id}?url=${encodeURIComponent(item.link)}&title=${encodeURIComponent(item.title)}`}
+                                        style={{ color: '#fff', textDecoration: 'none', cursor: 'pointer' }}
+                                    >
+                                        {(item.title || '').replace(/Download|Tamil|Review|Online/g, '').trim()}
+                                    </Link>
+                                ) : (item.magnet || (item.magnets && item.magnets[0])) ? (
+                                    <a
+                                        href={item.magnet || item.magnets[0].link}
+                                        style={{ color: '#fff', textDecoration: 'none', cursor: 'pointer' }}
+                                    >
+                                        {(item.title || '').replace(/Download|Tamil|Review|Online/g, '').trim()}
+                                    </a>
+                                ) : (
+                                    <span>{(item.title || '').replace(/Download|Tamil|Review|Online/g, '').trim()}</span>
+                                )}
                             </h3>
 
                             {/* Torrent Info */}
@@ -262,79 +279,7 @@ export default function SearchPage() {
                                 </div>
                             )}
 
-                            {/* Action Buttons */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {/* Multi-Magnet Support for 1TamilMV */}
-                                {item.magnets && item.magnets.length > 1 ? (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                        {item.magnets.map((mag: any, mIdx: number) => (
-                                            <a
-                                                key={mIdx}
-                                                href={mag.link}
-                                                style={{
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                                    padding: '8px 12px', background: '#333',
-                                                    border: '1px solid #444', borderRadius: '6px', color: '#fff',
-                                                    textDecoration: 'none', fontSize: '0.85rem'
-                                                }}
-                                                title={mag.title}
-                                            >
-                                                <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>
-                                                    🧲 {mag.title !== 'Unknown' && mag.title !== 'Standard' ? mag.title : `Link ${mIdx + 1}`}
-                                                </span>
-                                                {mag.size && mag.size !== 'Unknown' && (
-                                                    <span style={{ background: '#4caf50', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>
-                                                        {mag.size}
-                                                    </span>
-                                                )}
-                                            </a>
-                                        ))}
-                                    </div>
-                                ) : item.magnet ? (
-                                    <a
-                                        href={item.magnet}
-                                        style={{
-                                            padding: '12px', background: '#4caf50',
-                                            textAlign: 'center', borderRadius: '8px', color: '#fff',
-                                            textDecoration: 'none', fontWeight: 'bold', display: 'flex',
-                                            alignItems: 'center', justifyContent: 'center', gap: '8px'
-                                        }}
-                                    >
-                                        <Download size={16} /> MAGNET {item.size ? `(${item.size})` : ''}
-                                    </a>
-                                ) : (item.source || source) === '1tamilmv' && item.link ? (
-                                    <>
-                                        {/* Fallback to simple magnet/watch if scrape failed to get deep magnets */}
-                                        <Link
-                                            href={`/watch/topic-${item.id || idx}?url=${encodeURIComponent(item.link)}&title=${encodeURIComponent(item.title)}`}
-                                            style={{
-                                                padding: '12px', background: '#ff5722',
-                                                textAlign: 'center', borderRadius: '8px', color: '#fff',
-                                                textDecoration: 'none', fontWeight: 'bold', display: 'flex',
-                                                alignItems: 'center', justifyContent: 'center', gap: '8px'
-                                            }}
-                                        >
-                                            <Play size={16} /> WATCH
-                                        </Link>
-                                    </>
-                                ) : item.link ? (
-                                    <Link
-                                        href={`/watch/topic-${item.id || idx}?url=${encodeURIComponent(item.link)}&title=${encodeURIComponent(item.title)}`}
-                                        style={{
-                                            padding: '12px', background: '#222',
-                                            textAlign: 'center', borderRadius: '8px', color: '#fff',
-                                            textDecoration: 'none', fontWeight: 'bold', display: 'flex',
-                                            alignItems: 'center', justifyContent: 'center', gap: '8px'
-                                        }}
-                                    >
-                                        <Play size={16} /> WATCH
-                                    </Link>
-                                ) : (
-                                    <span style={{ padding: '12px', background: '#333', textAlign: 'center', borderRadius: '8px', color: '#888' }}>
-                                        No Link
-                                    </span>
-                                )}
-                            </div>
+                            {/* Removed Action Buttons as per request */}
                         </div>
                     </div>
                 ))}
