@@ -2,13 +2,12 @@ import { NextResponse } from 'next/server';
 import { searchCache, circuitBreaker } from '@/lib/cache';
 import { performanceMonitor, prefetchManager } from '@/lib/advanced';
 import { fetchHtmlWithBypass } from '@/lib/proxy';
+import { getDomain } from '@/lib/config';
 
 /**
  * 🚀 ADVANCED 1TamilBlasters Scraper with Cloudflare Bypass
- * Uses multi-layer bypass: Enhanced Headers → CORS Proxies → ScraperAPI
+ * Uses dynamic domain from Admin Panel (Cookies)
  */
-
-const DOMAIN = 'https://www.1tamilblasters.business';
 
 export async function GET(request: Request) {
     const startTime = Date.now();
@@ -34,9 +33,9 @@ export async function GET(request: Request) {
     console.log(`[API/TamilBlasters] Searching for: "${query}" with Cloudflare bypass`);
 
     try {
-        // Use advanced bypass to fetch the search page
-        const searchUrl = `${DOMAIN}/?s=${encodeURIComponent(query)}`;
-        const html = await fetchHtmlWithBypass(searchUrl, DOMAIN);
+        const domain = await getDomain('1tamilblasters');
+        const searchUrl = `${domain}/?s=${encodeURIComponent(query)}`;
+        const html = await fetchHtmlWithBypass(searchUrl, domain);
 
         // Parse results using regex (no Puppeteer needed!)
         const results: any[] = [];
@@ -82,7 +81,7 @@ export async function GET(request: Request) {
 
         // Alternative: Look for direct post links if article pattern fails
         if (results.length === 0) {
-            const postLinkPattern = /<a[^>]*href="(https?:\/\/[^"]*1tamilblasters[^"]*\/[^"]*)"[^>]*>([^<]{10,})<\/a>/gi;
+            const postLinkPattern = /<a[^>]*href="(https?:\/\/.*1tamilblasters.*\/.*)"[^>]*>([^<]{10,})<\/a>/gi;
             const seen = new Set();
 
             while ((match = postLinkPattern.exec(html)) !== null) {

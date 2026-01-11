@@ -15,16 +15,25 @@ export default function AdminPage() {
     const [saved, setSaved] = useState(false);
 
     useEffect(() => {
-        const stored = localStorage.getItem('domain_config');
+        // Load from Cookies (Server Compatible)
+        const getCookie = (name: string) => {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop()?.split(';').shift();
+        };
+
+        const stored = getCookie('domain_config');
         if (stored) {
             try {
-                setDomains({ ...domains, ...JSON.parse(stored) });
+                setDomains({ ...domains, ...JSON.parse(decodeURIComponent(stored)) });
             } catch (e) { }
         }
     }, []);
 
     const handleSave = () => {
-        localStorage.setItem('domain_config', JSON.stringify(domains));
+        // Save to Cookies (1 Year Expiry)
+        const val = encodeURIComponent(JSON.stringify(domains));
+        document.cookie = `domain_config=${val}; path=/; max-age=31536000; SameSite=Lax`;
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
     };
@@ -38,7 +47,8 @@ export default function AdminPage() {
             'rutracker': 'rutracker.org'
         };
         setDomains(defaults);
-        localStorage.setItem('domain_config', JSON.stringify(defaults));
+        const val = encodeURIComponent(JSON.stringify(defaults));
+        document.cookie = `domain_config=${val}; path=/; max-age=31536000; SameSite=Lax`;
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
     };

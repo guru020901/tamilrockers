@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchHtmlWithBypass } from '@/lib/proxy';
+import { getDomain } from '@/lib/config';
 
 /**
  * 🚀 ADVANCED 1TamilBlasters Details Scraper with Cloudflare Bypass
@@ -17,8 +18,9 @@ export async function GET(request: Request) {
     console.log(`[API/TamilBlasters/Details] Fetching with bypass: ${targetUrl}`);
 
     try {
+        const domain = await getDomain('1tamilblasters');
         // Use advanced bypass to fetch the details page
-        const html = await fetchHtmlWithBypass(targetUrl, 'https://www.1tamilblasters.business');
+        const html = await fetchHtmlWithBypass(targetUrl, domain);
 
         // Extract magnet links using regex
         const magnets: any[] = [];

@@ -1,19 +1,20 @@
 import { NextResponse } from 'next/server';
 import { searchCache, circuitBreaker } from '@/lib/cache';
 import { performanceMonitor, prefetchManager } from '@/lib/advanced';
+import { getDomain } from '@/lib/config';
 
 /**
  * PUPPETEER-FREE 1TamilMV Scraper
  * Uses fetch + regex parsing (works on Vercel serverless!)
  */
 
-const DEFAULT_DOMAIN = 'https://www.1tamilmv.wf';
-
 export async function GET(request: Request) {
     const startTime = Date.now();
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q');
-    const domain = searchParams.get('domain') || DEFAULT_DOMAIN;
+
+    // Priority: Query Param > Admin Config > Default
+    const domain = searchParams.get('domain') || await getDomain('1tamilmv');
 
     if (!query) {
         return NextResponse.json({ error: 'Query parameter "q" is required' }, { status: 400 });
