@@ -59,6 +59,15 @@ export async function GET(request: Request) {
         // Merge patterns
         const allHlsPatterns = [...hlsPatterns, ...providerPatterns];
 
+        // 1.2 Specialized Providers (DoodStream / StreamTape / Voe)
+        // These often have specific "token" based URLs that need reconstruction or specific regex
+        const specialProviders = [
+            // StreamTape (get_video?id=...&token=...)
+            /get_video\?id=([^&]+)&token=([^"']+)/,
+            // DoodStream (pass_md5/...)
+            /\/pass_md5\/([^"']+)/,
+        ];
+
         // 2. Generic MP4 patterns (Moved up for scope access)
         const mp4Patterns = [
             /file\s*:\s*["']([^"']+\.mp4[^"']*)["']/i,

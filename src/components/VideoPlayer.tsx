@@ -535,7 +535,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                             </div>
                         ) : (
                             <iframe
-                                src={`/api/player?url=${encodeURIComponent(watch)}`}
+                                src={watch}
                                 style={{ width: '100%', height: '100%', border: 'none', pointerEvents: adShieldActive ? 'none' : 'auto' }}
                                 allowFullScreen
                                 allow="autoplay; fullscreen; encrypted-media"
