@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, Play, Loader, AlertCircle, Database, Globe, Zap, Download, Settings } from 'lucide-react';
 import Link from 'next/link';
 
-type SearchSource = '1tamilmv' | 'tpb' | '1337x' | 'rutracker' | 'all';
+type SearchSource = '1tamilmv' | 'tpb' | '1337x' | 'rutracker' | '1tamilblasters' | 'all';
 
 export default function SearchPage() {
     const [query, setQuery] = useState('');
@@ -19,7 +19,8 @@ export default function SearchPage() {
         '1tamilmv': 'https://1tamilmv.do',
         'tpb': 'https://thepibay.site',
         '1337x': 'https://1337x.to',
-        'rutracker': 'rutracker.org'
+        'rutracker': 'rutracker.org',
+        '1tamilblasters': 'https://1tamilblasters.business'
     });
 
     // Load domains from localStorage on mount
@@ -45,9 +46,7 @@ export default function SearchPage() {
             // Define fetchers - USE DOMAINS FROM STATE
             // 1. Search 1TamilMV (via internal proxy)
             const fetch1TamilMV = async () => {
-                // Streaming results directly to state
                 try {
-                    // Using internal API route which proxies to port 3007 (server-side)
                     const d = encodeURIComponent(domains['1tamilmv']);
                     const res = await fetch(`/api/tamilmv?q=${encodeURIComponent(query)}&domain=${d}`);
                     const data = await res.json();
@@ -61,8 +60,24 @@ export default function SearchPage() {
                 } catch (e) {
                     console.error('1TamilMV Error:', e);
                     setBlockedSources(prev => [...prev, '1TamilMV']);
-                } finally {
-                    // Done with 1TamilMV
+                }
+            };
+
+            // 1.5. Search 1TamilBlasters (via internal proxy)
+            const fetch1TamilBlasters = async () => {
+                try {
+                    const res = await fetch(`/api/tamilblasters?q=${encodeURIComponent(query)}`);
+                    const data = await res.json();
+                    if (data.results) {
+                        setResults(prev => {
+                            const existing = new Set(prev.map(p => p.link));
+                            const newItems = data.results.filter((i: any) => !existing.has(i.link)); // Source already set in backend
+                            return [...prev, ...newItems];
+                        });
+                    }
+                } catch (e) {
+                    console.error('1TamilBlasters Error:', e);
+                    setBlockedSources(prev => [...prev, '1TamilBlasters']);
                 }
             };
 
@@ -101,10 +116,13 @@ export default function SearchPage() {
             if (source === 'all') {
                 await Promise.all([
                     fetch1TamilMV(),
+                    fetch1TamilBlasters(),
                     fetchMultiSearch('all')
                 ]);
             } else if (source === '1tamilmv') {
                 await fetch1TamilMV();
+            } else if (source === '1tamilblasters') {
+                await fetch1TamilBlasters();
             } else {
                 await fetchMultiSearch(source);
             }
@@ -121,6 +139,7 @@ export default function SearchPage() {
             case '1337x': return { background: '#e91e63', color: '#fff' };
             case 'rutracker': return { background: '#2196f3', color: '#fff' };
             case '1tamilmv': return { background: '#4caf50', color: '#fff' };
+            case '1tamilblasters': return { background: '#ff9800', color: '#fff' };
             default: return { background: '#666', color: '#fff' };
         }
     };
@@ -132,16 +151,17 @@ export default function SearchPage() {
                 <h1 style={{ fontSize: '3rem', fontWeight: 'bold', marginBottom: '10px', background: 'linear-gradient(45deg, #ff5722, #ff9100)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                     TorrentRockers
                 </h1>
-                <p style={{ color: '#888' }}>Multi-Source Torrent Search • TPB • 1337x • 1TamilMV</p>
+                <p style={{ color: '#888' }}>Multi-Source Torrent Search • TPB • 1337x • 1TamilMV • 1TamilBlasters</p>
             </div>
 
             {/* Source Selector */}
-            <div style={{ maxWidth: '600px', margin: '0 auto 20px', display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <div style={{ maxWidth: '700px', margin: '0 auto 20px', display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
                 {[
                     { id: 'tpb', name: 'ThePirateBay', icon: <Globe size={16} /> },
                     { id: '1337x', name: '1337x', icon: <Zap size={16} /> },
                     { id: 'rutracker', name: 'RuTracker', icon: <Database size={16} /> },
                     { id: '1tamilmv', name: '1TamilMV', icon: <Database size={16} /> },
+                    { id: '1tamilblasters', name: '1TamilBlasters', icon: <Zap size={16} /> },
                     { id: 'all', name: 'All Sources', icon: <Search size={16} /> },
                 ].map((s) => (
                     <button

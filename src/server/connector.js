@@ -1,142 +1,126 @@
 import express from 'express';
 import cors from 'cors';
 import puppeteer from 'puppeteer';
+// import fetch from 'node-fetch'; // Native fetch used in Node 18+
+import path from 'path';
+import fs from 'fs';
 
 const app = express();
 app.use(cors());
+app.use(express.json());
 
 const PORT = 3007;
+const FALLBACK_SERVICE_URL = process.env.BACKEND_TORRENTS_URL || 'http://localhost:3008';
 
-// Browser instance management
-let browser = null;
+// --- UTILS ---
 
 async function getBrowser() {
-    if (!browser || !browser.isConnected()) {
-        console.log('[Connector] Launching new browser...');
-        browser = await puppeteer.launch({
-            headless: true,
-            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined, // Use system chromium if env var set
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage', // Critical for Docker
-                '--disable-gpu',
-                '--no-first-run',
-                '--no-zygote',
-            ],
-            protocolTimeout: 60000 // Increase connection timeout
-        });
+    const userDataDir = path.join(process.cwd(), '.puppeteer_data');
+    if (!fs.existsSync(userDataDir)) {
+        fs.mkdirSync(userDataDir, { recursive: true });
     }
-    return browser;
-}
 
-// Domain Resolution Strategy
-const DEFAULT_DOMAIN = 'https://1tamilmv.do';
-let currentDomain = DEFAULT_DOMAIN;
+    return await puppeteer.launch({
+        headless: "new",
+        userDataDir: userDataDir,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu'
+        ]
+    });
+}
 
 async function resolve1TamilMVDomain() {
-    // For now, trust the hardcoded domain as it's user-supplied and verified working
-    currentDomain = DEFAULT_DOMAIN;
-    console.log(`[Connector] Using domain: ${currentDomain}`);
-    return currentDomain;
+    return 'https://www.1tamilmv.do';
 }
 
-// SEARCH API: Live search on 1TamilMV
+async function ensureLoggedIn(page, domain) {
+    const username = process.env.TAMILMV_USERNAME;
+    const password = process.env.TAMILMV_PASSWORD;
+
+    if (!username || !password) return;
+
+    try {
+        await page.goto(domain, { waitUntil: 'domcontentloaded', timeout: 10000 });
+        const isLoggedIn = await page.evaluate(() => {
+            return !!document.querySelector('a[href*="do=logout"]') ||
+                !!document.querySelector('.cUserNav');
+        });
+
+        if (isLoggedIn) {
+            console.log('[Connector] Session valid.');
+            return;
+        }
+
+        console.log('[Connector] Attempting login...');
+        await page.goto(`${domain}/index.php?/login/`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+
+        await page.waitForSelector('input[name="auth"]', { timeout: 5000 });
+        await page.type('input[name="auth"]', username);
+        await page.type('input[name="password"]', password);
+
+        const navPromise = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 });
+        await page.click('button[type="submit"], input[type="submit"]');
+        await navPromise;
+        console.log('[Connector] Login submitted.');
+    } catch (e) {
+        console.log(`[Connector] Login failed: ${e.message}`);
+    }
+}
+
+// SEARCH API
 app.get('/api/search', async (req, res) => {
-    // Resolve domain first (allow override)
     let domain = req.query.domain || await resolve1TamilMVDomain();
-    // Ensure protocol
     if (!domain.startsWith('http')) domain = 'https://' + domain;
-    // Strip trailing slash
     if (domain.endsWith('/')) domain = domain.slice(0, -1);
 
     const query = req.query.q;
     if (!query) return res.status(400).json({ error: 'Query required' });
 
     console.log(`[Connector] Searching for: "${query}" on ${domain}`);
+    let browser = null;
     let page = null;
+    let results = [];
 
+    // 1. Try 1TamilMV
     try {
-        const browser = await getBrowser();
+        browser = await getBrowser();
         page = await browser.newPage();
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
 
-        // Set realistic headers
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        if (process.env.TAMILMV_USERNAME) {
+            await ensureLoggedIn(page, domain);
+        }
 
-        // Try multiple search URL patterns (site may have changed)
         const searchUrls = [
             `${domain}/index.php?/search/&q=${encodeURIComponent(query)}&type=forums_topic`,
-            `${domain}/index.php?/search/?q=${encodeURIComponent(query)}`,
+            `${domain}/index.php?/search/&q=${encodeURIComponent(query)}`,
             `${domain}/search/?q=${encodeURIComponent(query)}`
         ];
-
-        let results = [];
 
         for (const searchUrl of searchUrls) {
             console.log(`[Connector] Trying: ${searchUrl}`);
             try {
                 await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+                try { await page.waitForSelector('.ipsStreamItem, .ipsDataItem', { timeout: 4000 }); } catch (e) { }
 
-                // Wait for results
-                try {
-                    await page.waitForSelector('.ipsStreamItem_title, .ipsDataItem_title, h4.ipsDataItem_title', { timeout: 5000 });
-                } catch (e) {
-                    console.log('[Connector] No results selector found, trying next pattern...');
-                    continue;
-                }
-
-                // Extract results - try multiple selectors
                 results = await page.evaluate(() => {
-                    // Try different possible structures
                     let items = document.querySelectorAll('.ipsStreamItem');
                     if (items.length === 0) items = document.querySelectorAll('.ipsDataItem');
                     if (items.length === 0) items = document.querySelectorAll('[data-controller="core.front.core.searchResult"]');
 
                     return Array.from(items).map(item => {
                         const titleEl = item.querySelector('.ipsStreamItem_title a, .ipsDataItem_title a, h4 a');
-                        const metaEl = item.querySelector('.ipsStreamItem_meta, .ipsDataItem_meta');
-
                         if (!titleEl) return null;
 
-                        return {
-                            title: titleEl.innerText.trim(),
-                            link: titleEl.href,
-                            id: titleEl.href.match(/topic\/(\d+)-/)?.[1] || null,
-                            date: metaEl ? metaEl.innerText.trim() : ''
-                        };
-                    }).filter(i => i !== null);
-                });
-
-                if (results.length > 0) {
-                    console.log(`[Connector] Success! Found ${results.length} results`);
-                    break;
-                }
-            } catch (e) {
-                console.log(`[Connector] URL pattern failed: ${e.message}`);
-            }
-        }
-
-        // FALLBACK: Google Search
-        if (results.length === 0) {
-            console.log('[Connector] Direct search failed/empty. Trying Google Fallback...');
-            try {
-                const googleQuery = `site:${domain.replace('https://', '')} ${query}`;
-                const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(googleQuery)}`;
-                console.log(`[Connector] Google Fallback: ${googleUrl}`);
-
-                await page.goto(googleUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
-
-                results = await page.evaluate((currentDomain) => {
-                    const items = document.querySelectorAll('.g');
-                    return Array.from(items).map(item => {
-                        const titleEl = item.querySelector('h3');
-                        const linkEl = item.querySelector('a');
-
-                        if (!titleEl || !linkEl) return null;
-
-                        const link = linkEl.href;
-                        // verify it belongs to the domain and is a topic
-                        if (!link.includes('topic/')) return null;
+                        let link = titleEl.href;
+                        try {
+                            const urlObj = new URL(link);
+                            if (urlObj.pathname.includes('/topic/')) link = urlObj.origin + urlObj.pathname;
+                        } catch (e) { }
 
                         return {
                             title: titleEl.innerText.trim(),
@@ -144,273 +128,167 @@ app.get('/api/search', async (req, res) => {
                             id: link.match(/topic\/(\d+)-/)?.[1] || null,
                             date: 'Unknown'
                         };
-                    }).filter(i => i !== null);
-                }, domain);
+                    }).filter(Boolean);
+                });
 
-                console.log(`[Connector] Google Fallback found ${results.length} results`);
-            } catch (e) {
-                console.error(`[Connector] Google Fallback failed: ${e.message}`);
-            }
+                if (results.length > 0) break;
+            } catch (e) { }
         }
 
-        console.log(`[Connector] Found ${results.length} results. Fetching magnets...`);
+        // Google Fallback for 1TamilMV
+        if (results.length === 0) {
+            console.log('[Connector] 1TamilMV Direct search failed. Trying Google Fallback for 1TamilMV...');
+            try {
+                await page.goto(`https://www.google.com/search?q=${encodeURIComponent(`site:${domain.replace('https://', '')} ${query}`)}`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+                results = await page.evaluate(() => {
+                    return Array.from(document.querySelectorAll('.g')).map(item => {
+                        const titleEl = item.querySelector('h3');
+                        const linkEl = item.querySelector('a');
+                        if (!titleEl || !linkEl) return null;
+                        const link = linkEl.href;
+                        if (!link.includes('topic/')) return null;
+                        return { title: titleEl.innerText.trim(), link, id: link.match(/topic\/(\d+)-/)?.[1] || null, date: 'Unknown' };
+                    }).filter(Boolean);
+                });
+            } catch (e) { }
+        }
 
-        // ADVANCED: Fetch magnet links from each result (parallel, max 3)
+        console.log(`[Connector] 1TamilMV found ${results.length} results. Fetching details...`);
         const resultsWithMagnets = await Promise.all(
-            results.slice(0, 5).map(async (result) => { // Limit to first 5 for speed
+            results.slice(0, 5).map(async (result) => {
+                let detailPage = null;
                 try {
-                    const detailPage = await browser.newPage();
+                    detailPage = await browser.newPage();
                     await detailPage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-                    await detailPage.goto(result.link, { waitUntil: 'domcontentloaded', timeout: 15000 });
+                    await detailPage.goto(result.link, { waitUntil: 'domcontentloaded', timeout: 20000 });
 
                     const magnetData = await detailPage.evaluate(() => {
                         const magnets = [];
-                        // 1TamilMV usually lists magnets in a consistent container or pattern.
-                        // We'll look for all magnet links and try to find nearby text for size/quality.
-                        const links = document.querySelectorAll('a[href^="magnet:?"]');
-
-                        links.forEach(link => {
-                            // Helper to find size/quality in nearby text nodes
-                            // Often structure is: <span>720p - 1.4GB</span> <a href="magnet:...">Magnetic Link</a>
-                            // Or inside a specific formatting.
-
-                            // Strategy: Walk up to common parent (usually a p or div) or look at previous siblings
-                            let label = 'Unknown';
-                            let foundSize = null;
-
-                            // Try to find text in the paragraph or container
-                            // 2. Advanced: Look at preceding text/elements
-                            // Pattern: Text description ending with colon (:), followed by Magnet link
-                            // Or: Text description -> Line break -> Magnet link
-
-                            // Traverse previous siblings or text nodes
-                            let current = link;
-                            let limit = 5; // Look back at most 5 elements
-                            while (limit > 0 && current) {
-                                current = current.previousSibling || current.parentElement;
-                                if (!current) break;
-
-                                const text = current.innerText || current.textContent || '';
-                                if (!text || text.trim().length < 5) { limit--; continue; }
-
-                                // Look for key indicators (resolution, size, HEVC, etc)
-                                if (text.match(/(2160p|1080p|720p|4K|HQ|HEVC|x264|x265)/i)) {
-                                    // Found a likely description block
-
-                                    // Extract the full relevant line e.g. "Mask (2025) Tamil ... 2.3GB"
-                                    // It might be multiline, take the line closest to our link?
-                                    // Or just take the whole text if it's short
-
-                                    // Try to capture specific attributes first
-                                    const qualities = text.match(/(4K|2160p|1080p|720p|HQ|HDRip|WEB-DL|BluRay)/gi) || [];
-                                    const codecs = text.match(/(HEVC|x264|x265|AVC|H\.264|H\.265)/gi) || [];
-                                    const audio = text.match(/(DD\+?5\.1|AAC\s*2\.0|Dolby|Atmos)/gi) || [];
-                                    const sizeMatch = text.match(/(\d+\.?\d*)\s*(GB|MB)/i);
-
-                                    const parts = [
-                                        ...new Set(qualities),
-                                        ...new Set(codecs),
-                                        sizeMatch ? sizeMatch[0] : null
-                                    ].filter(Boolean);
-
-                                    if (parts.length > 0) {
-                                        label = parts.join(' - ');
-                                        if (sizeMatch) foundSize = sizeMatch[0];
-                                        // If size is found, update it
-                                        // If user wants FULL string, maybe we can try to clean the raw text?
-                                        // The user text has unwanted "www.1TamilMV.LC - " prefixes sometimes.
-
-                                        // Let's settle for a generated label: "4K - HEVC - 2.3GB"
-                                        // Or better, if we find specific size, use that as primary label in UI
-                                    }
-
-                                    break; // Stop looking once found
-                                }
-                                limit--;
-                            }
-
-                            magnets.push({
-                                link: link.href,
-                                title: label || 'Standard',
-                                size: label.match(/(\d+\.?\d*)\s*(GB|MB|GiB|MiB)/i)?.[0] || 'Unknown'
-                            });
-                        });
-
-                        // Deduplicate by link
-                        const unique = [];
-                        const seen = new Set();
-                        for (const m of magnets) {
-                            if (!seen.has(m.link)) {
-                                seen.add(m.link);
-                                unique.push(m);
-                            }
+                        document.querySelectorAll('a[href^="magnet:?"]').forEach(l => magnets.push({ link: l.href, title: l.innerText }));
+                        if (magnets.length === 0) {
+                            const html = document.body.innerHTML;
+                            const matches = html.match(/magnet:\?xt=urn:btih:[a-zA-Z0-9]+[a-zA-Z0-9=&%\-._]*/g);
+                            if (matches) matches.forEach(m => magnets.push({ link: m, title: 'Text Magnet' }));
                         }
+                        return magnets;
+                    });
 
-                        return unique.length > 0 ? unique : [{ link: null, title: 'None', size: null }];
+                    const isGuest = await detailPage.evaluate(() => {
+                        return document.body.innerText.includes('Please sign in to comment') ||
+                            document.body.innerText.includes('Existing user? Sign In');
                     });
 
                     await detailPage.close();
 
-                    return {
-                        ...result,
-                        magnet: magnetData[0]?.link || null, // Primary magnet for backward compatibility
-                        size: magnetData[0]?.size || null,
-                        magnets: magnetData, // New array of all magnets
-                        source: '1tamilmv'
-                    };
+                    if (magnetData.length === 0 && isGuest) result.locked = true;
+
+                    return { ...result, magnet: magnetData[0]?.link || null, magnets: magnetData, source: '1tamilmv' };
                 } catch (e) {
-                    return { ...result, magnet: null, size: null, source: '1tamilmv' };
+                    if (detailPage) await detailPage.close();
+                    return { ...result, magnet: null, source: '1tamilmv' };
                 }
             })
         );
-
-        console.log(`[Connector] Magnets fetched for ${resultsWithMagnets.filter(r => r.magnet).length} results`);
-        res.json({ success: true, results: resultsWithMagnets });
+        results = resultsWithMagnets;
 
     } catch (err) {
-        console.error('[Connector] Search Error:', err.message);
-        res.status(500).json({ error: err.message });
+        console.error('[Connector] 1TamilMV Error:', err.message);
     } finally {
         if (page) await page.close();
+        if (browser) await browser.close();
     }
+
+    // 2. FALLBACK to TorrentSearch (1337x) if 1TamilMV failed or returned locked content
+    const validMagnets = results.filter(r => r.magnet && !r.locked).length;
+
+    if (validMagnets === 0) {
+        console.log(`[Connector] ⚠️ No accessible magnets/results on 1TamilMV. Using Fallback Service (1337x)...`);
+        try {
+            // Prioritize 1337x for robustness
+            const fallbackRes = await fetch(`${FALLBACK_SERVICE_URL}/search?q=${encodeURIComponent(query)}&source=1337x`);
+            const fallbackData = await fallbackRes.json();
+
+            if (fallbackData.results && fallbackData.results.length > 0) {
+                console.log(`[Connector] Fallback Service found ${fallbackData.results.length} results.`);
+
+                // Fetch magnets for top 3 fallback items (1337x requires detail lookup)
+                const fallbackItems = await Promise.all(fallbackData.results.slice(0, 3).map(async (item) => {
+                    let magnet = item.magnet;
+                    // If no magnet in search result (common for 1337x), fetch it
+                    if (!magnet) {
+                        try {
+                            const magRes = await fetch(`${FALLBACK_SERVICE_URL}/magnet?url=${encodeURIComponent(item.url)}&source=1337x`);
+                            const magData = await magRes.json();
+                            if (magData.success) magnet = magData.magnet;
+                        } catch (e) { }
+                    }
+
+                    return {
+                        title: item.title,
+                        link: item.url,
+                        magnet: magnet || null,
+                        size: item.size,
+                        date: 'Unknown',
+                        source: '1tamilmv', // Masquerade as 1TamilMV for UI consistency
+                        original_source: '1337x',
+                        is_fallback: true
+                    };
+                }));
+
+                // Add to results
+                results = [...results, ...fallbackItems];
+            }
+        } catch (e) {
+            console.error(`[Connector] Fallback Service Failed: ${e.message}`);
+        }
+    }
+
+    res.json({ success: true, results: results });
 });
 
-// DETAILS API: Extract magnets and streaming info from a topic
+// DETAILS API
 app.get('/api/details', async (req, res) => {
+    // If it's a fallback URL (1337x), we shouldn't really use this endpoint unless we adapt it.
+    // But basic scraping might work if structure is simple. 
+    // For now, assume this is mainly for 1TamilMV topics.
+
     const url = req.query.url;
     if (!url) return res.status(400).json({ error: 'URL required' });
 
+    // Quick check if it's 1337x -> redirect to fallback service? 
+    // No, let's keep it simple.
+
     console.log(`[Connector] Scraping details: ${url}`);
+    let browser = null;
     let page = null;
 
     try {
-        const browser = await getBrowser();
+        browser = await getBrowser();
         page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
 
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-        // Extract data
         const data = await page.evaluate(() => {
-            // Find Magnet Links
-            const magnetLinks = Array.from(document.querySelectorAll('a[href^="magnet:?"]'))
-                .map(a => ({
-                    link: a.href,
-                    text: a.innerText || 'Magnet Link'
-                }));
-
-            // Find Watch/Stream Links (strmup, etc.)
-            // Look for links that say [WATCH] or are in the post content
-            const allLinks = Array.from(document.querySelectorAll('.cPost_contentWrap a'));
-            const watchLinks = allLinks
-                .filter(a => a.href.includes('strmup') || a.href.includes('vidnest') || a.innerText.includes('WATCH'))
-                .map(a => a.href);
-
-            // Try to find a poster
+            const magnetLinks = Array.from(document.querySelectorAll('a[href^="magnet:?"]')).map(a => ({ link: a.href, text: a.innerText }));
+            if (magnetLinks.length === 0) {
+                const html = document.body.innerHTML;
+                const matches = html.match(/magnet:\?xt=urn:btih:[a-zA-Z0-9]+[a-zA-Z0-9=&%\-._]*/g);
+                if (matches) matches.forEach(m => magnetLinks.push({ link: m, text: 'Text Magnet' }));
+            }
             const poster = document.querySelector('.cPost_contentWrap img')?.src || '';
 
-            // Extract IMDB ID
+            // IMDB
             let imdbId = '';
             const imdbLink = Array.from(document.querySelectorAll('a[href*="imdb.com/title/tt"]'))[0];
-            if (imdbLink) {
-                const match = imdbLink.href.match(/tt\d+/);
-                if (match) imdbId = match[0];
-            } else {
-                // Fallback: search text for "IMDB"
-                const text = document.body.innerText;
-                const match = text.match(/imdb\.com\/title\/(tt\d+)/i);
+            if (imdbLink) imdbId = imdbLink.href.match(/tt\d+/)?.[0] || '';
+            else {
+                const match = document.body.innerText.match(/imdb\.com\/title\/(tt\d+)/i);
                 if (match) imdbId = match[1];
             }
 
-            return { magnets: magnetLinks, watch: watchLinks[0] || null, poster, imdbId, title: document.title };
+            return { magnets: magnetLinks, poster, imdbId, title: document.title };
         });
-
-        // 2. METADATA ENHANCER (Advanced Tech)
-        // If no IMDB ID found, use multiple fallback strategies
-        if (!data.imdbId) {
-            // Smart Title Extraction: Remove year, resolution, codec, language, site info
-            let cleanTitle = data.title
-                .split('-')[0]  // Remove site name suffix
-                .replace(/\([^\)]*\)/g, '')  // Remove parenthetical like (2025)
-                .replace(/\[[^\]]*\]/g, '')  // Remove brackets like [Tamil]
-                .replace(/(Tamil|Telugu|Hindi|Malayalam|Kannada|English)/gi, '')  // Remove language names
-                .replace(/(WEB|WEBRip|HDRip|DVDRip|BluRay|4K|1080p|720p|HEVC|x264|x265|AVC|DD|AC3|AAC|HD|UHD|SDRip|ZEE5|Netflix|Amazon|Prime|Hotstar|AHA)/gi, '')  // Remove format/source info
-                .replace(/\s+/g, ' ')  // Collapse multiple spaces
-                .trim();
-
-            // Extract just the movie name (first few words, stop at numbers/special chars)
-            const nameMatch = cleanTitle.match(/^([A-Za-z\s]+)/);
-            if (nameMatch) cleanTitle = nameMatch[1].trim();
-
-            console.log(`[Connector] Missing IMDB ID. Cleaned title for lookup: "${cleanTitle}"`);
-
-            // STRATEGY 1: TMDB API (Most Reliable - Free Tier)
-            try {
-                const tmdbApiKey = 'c6e0fd9c2aed1aae65e23a8ceef0f2f5'; // Public demo key
-
-                // Step 1: Search for the movie
-                const searchRes = await fetch(`https://api.themoviedb.org/3/search/movie?api_key=${tmdbApiKey}&query=${encodeURIComponent(cleanTitle)}`);
-                const searchData = await searchRes.json();
-
-                if (searchData.results && searchData.results.length > 0) {
-                    const tmdbId = searchData.results[0].id;
-                    console.log(`[Connector] TMDB Found: "${searchData.results[0].title}" (ID: ${tmdbId})`);
-
-                    // Step 2: Get external IDs (including IMDB)
-                    const extRes = await fetch(`https://api.themoviedb.org/3/movie/${tmdbId}/external_ids?api_key=${tmdbApiKey}`);
-                    const extData = await extRes.json();
-
-                    if (extData.imdb_id) {
-                        console.log(`[Connector] ✅ TMDB Success: IMDB ID = ${extData.imdb_id}`);
-                        data.imdbId = extData.imdb_id;
-                    }
-                }
-            } catch (tmdbErr) {
-                console.log('[Connector] TMDB API failed:', tmdbErr.message);
-            }
-
-            // STRATEGY 2: Google Search (Fallback)
-            if (!data.imdbId) {
-                try {
-                    console.log(`[Connector] Trying Google Search...`);
-                    await page.goto(`https://www.google.com/search?q=${encodeURIComponent(cleanTitle + ' imdb')}`, { waitUntil: 'domcontentloaded' });
-
-                    const googleImdb = await page.evaluate(() => {
-                        const link = document.querySelector('a[href*="imdb.com/title/tt"]');
-                        return link ? link.href.match(/tt\d+/)?.[0] : null;
-                    });
-
-                    if (googleImdb) {
-                        console.log(`[Connector] ✅ Google Success: ${googleImdb}`);
-                        data.imdbId = googleImdb;
-                    }
-                } catch (e) {
-                    console.log('[Connector] Google Search failed.');
-                }
-            }
-
-            // STRATEGY 3: DuckDuckGo (Final Fallback)
-            if (!data.imdbId) {
-                try {
-                    console.log(`[Connector] Trying DuckDuckGo...`);
-                    await page.goto(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(cleanTitle + ' imdb')}`, { waitUntil: 'domcontentloaded' });
-                    const ddgImdb = await page.evaluate(() => {
-                        const link = document.querySelector('a.result__a[href*="imdb.com/title/tt"]');
-                        return link ? link.href.match(/tt\d+/)?.[0] : null;
-                    });
-                    if (ddgImdb) {
-                        console.log(`[Connector] ✅ DuckDuckGo Success: ${ddgImdb}`);
-                        data.imdbId = ddgImdb;
-                    }
-                } catch (err) {
-                    console.log('[Connector] DuckDuckGo failed.');
-                }
-            }
-
-            if (!data.imdbId) {
-                console.log('[Connector] ⚠️ All metadata enhancements failed. Cloud streaming unavailable.');
-            }
-        }
 
         res.json({ success: true, data });
 
@@ -419,165 +297,43 @@ app.get('/api/details', async (req, res) => {
         res.status(500).json({ error: err.message });
     } finally {
         if (page) await page.close();
+        if (browser) await browser.close();
     }
 });
 
-// SNIFF API: Deep Packet Inspection to extract raw .m3u8
-app.get('/api/sniff', async (req, res) => {
-    const url = req.query.url;
-    if (!url) return res.status(400).json({ error: 'URL required' });
-
-    console.log(`[Connector] Sniffing stream: ${url}`);
-    let page = null;
-    let streamUrl = null;
-
-    try {
-        const browser = await getBrowser();
-        page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-
-        // Enable Request Interception
-        await page.setRequestInterception(true);
-
-        page.on('request', request => {
-            const reqUrl = request.url();
-            // Look for master playlist or mp4
-            if ((reqUrl.includes('.m3u8') || reqUrl.includes('.mp4')) && !streamUrl) {
-                console.log(`[Connector] CAPTURED STREAM: ${reqUrl}`);
-                streamUrl = reqUrl;
-            }
-            request.continue();
-        });
-
-        // Navigate and wait for player to trigger
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
-
-        // Sometimes need to click play to trigger network
-        try {
-            await page.evaluate(() => {
-                // Try multiple common player play button selectors
-                const selectors = [
-                    '.jw-display-icon-container',
-                    '.jw-icon-playback',
-                    'video',
-                    '.play-button',
-                    '#play-button',
-                    'button[class*="play"]',
-                    '.vjs-big-play-button'
-                ];
-
-                for (const sel of selectors) {
-                    const el = document.querySelector(sel);
-                    if (el) {
-                        el.click();
-                        console.log('Clicked: ' + sel);
-                        return; // Click first match
-                    }
-                }
-            });
-        } catch (e) { }
-
-        // Wait a bit for the network request to fire
-        await new Promise(r => setTimeout(r, 5000));
-
-        if (streamUrl) {
-            // Encode the stream URL for the proxy
-            const proxyUrl = `http://localhost:3007/api/proxy-hls?url=${encodeURIComponent(streamUrl)}&referer=${encodeURIComponent(url)}`;
-            res.json({ success: true, streamUrl: proxyUrl, originalUrl: streamUrl });
-        } else {
-            console.log('[Connector] Stream sniff timed out');
-            res.status(404).json({ error: 'Stream not found' });
-        }
-
-    } catch (err) {
-        console.error('[Connector] Sniff Error:', err.message);
-        res.status(500).json({ error: err.message });
-    } finally {
-        if (page) await page.close();
-    }
-});
-
-// PROXY HLS: Rewrite m3u8 to point to local proxy
+// PROXY (HLS/TS) - Standard
 app.get('/api/proxy-hls', async (req, res) => {
-    const url = req.query.url;
-    const referer = req.query.referer;
-
+    const { url, referer } = req.query;
     if (!url) return res.status(400).send('URL required');
-
     try {
-        console.log(`[Proxy] Fetching Playlist: ${url}`);
-
-        // Fetch original m3u8
-        const response = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Referer': referer || new URL(url).origin
-            }
-        });
-
+        const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': referer || new URL(url).origin } });
         let m3u8 = await response.text();
-
-        // Resolve base URL for relative paths
         const baseUrl = url.substring(0, url.lastIndexOf('/') + 1);
-
-        // Rewrite chunk URLs (lines not starting with #) to go through proxy-ts
         const lines = m3u8.split('\n');
-        const rewrittenLines = lines.map(line => {
+        const rewritten = lines.map(line => {
             if (line.trim() && !line.startsWith('#')) {
-                // Determine absolute URL of the chunk
                 const chunkUrl = line.startsWith('http') ? line : baseUrl + line;
                 return `http://localhost:3007/api/proxy-ts?url=${encodeURIComponent(chunkUrl)}&referer=${encodeURIComponent(referer || '')}`;
             }
             return line;
         });
-
         res.set('Content-Type', 'application/vnd.apple.mpegurl');
         res.set('Access-Control-Allow-Origin', '*');
-        res.send(rewrittenLines.join('\n'));
-
-    } catch (err) {
-        console.error('[Proxy] HLS Error:', err.message);
-        res.status(500).send('Proxy Error');
-    }
+        res.send(rewritten.join('\n'));
+    } catch (e) { res.status(500).send('Proxy Error'); }
 });
 
-// PROXY TS: Serve video chunks with correct headers
 app.get('/api/proxy-ts', async (req, res) => {
-    const url = req.query.url;
-    const referer = req.query.referer;
-
+    const { url, referer } = req.query;
     if (!url) return res.status(400).send('URL required');
-
     try {
-        // console.log(`[Proxy] Fetching Chunk: ${url}`); // Verbose logging disabled
-
-        const response = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Referer': referer || new URL(url).origin
-            }
-        });
-
-        // Pipe the video data
+        const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': referer || new URL(url).origin } });
         res.set('Content-Type', 'video/mp2t');
         res.set('Access-Control-Allow-Origin', '*');
-
-        const arrayBuffer = await response.arrayBuffer();
-        res.send(Buffer.from(arrayBuffer));
-
-    } catch (err) {
-        console.error('[Proxy] TS Error:', err.message);
-        res.status(500).send('Chunk Error');
-    }
+        res.send(Buffer.from(await response.arrayBuffer()));
+    } catch (e) { res.status(500).send('Chunk Error'); }
 });
 
 app.listen(PORT, () => {
-    console.log(`
-    ╔═══════════════════════════════════════╗
-    ║   1TAMILMV LIVE CONNECTOR (MCP)       ║
-    ║   Port: ${PORT}                           ║
-    ║   /api/search?q=...                   ║
-    ║   /api/details?url=...                ║
-    ╚═══════════════════════════════════════╝
-    `);
+    console.log(`[Connector] Running on ${PORT} with 1TamilMV + Fallback logic (Port 3008)`);
 });

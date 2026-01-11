@@ -32,3 +32,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Debugging artifacts
+debug_*.html
+debug_*.png
+diagnose_*.js
+.puppeteer_data/
+.puppeteer_data_blasters/
+
