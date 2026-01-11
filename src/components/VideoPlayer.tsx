@@ -300,11 +300,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch }) => {
 
                 {mode === 'native-iframe' && watch && (
                     <div style={{ width: '100%', height: '100%' }}>
-                        <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, background: 'rgba(0,0,0,0.7)', padding: '5px 10px', borderRadius: '4px', color: '#aaa', fontSize: '0.8rem' }}>
-                            Standard Embed Mode
+                        <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, background: 'rgba(76, 175, 80, 0.9)', padding: '5px 10px', borderRadius: '4px', color: '#fff', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <ShieldCheck size={14} /> Native Ad-Free (Proxy)
                         </div>
                         <iframe
-                            src={watch}
+                            src={`http://localhost:3006/proxy?url=${encodeURIComponent(watch)}`}
                             style={{ width: '100%', height: '100%', border: 'none' }}
                             allowFullScreen
                             allow="autoplay; encrypted-media"

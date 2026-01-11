@@ -172,10 +172,26 @@ app.get('/details', async (req, res) => {
 
             const poster = document.querySelector('.nv-post-thumbnail-wrap img')?.src || null;
 
+            // Extract Watch/Stream URL
+            let watch = null;
+            // 1. Look for iframes
+            const iframes = Array.from(document.querySelectorAll('iframe'));
+            for (const iframe of iframes) {
+                const src = iframe.src;
+                if (src && (src.includes('cybervynx') || src.includes('youtube') || src.includes('dood') || src.includes('tape') || src.includes('embed'))) {
+                    watch = src;
+                    break;
+                }
+            }
+            // 2. Fallback to first iframe if valid
+            if (!watch && iframes.length > 0 && iframes[0].src && iframes[0].src.startsWith('http')) {
+                watch = iframes[0].src;
+            }
+
             return {
                 magnets: unique,
                 poster,
-                watch: false // No native stream for blasters
+                watch // extracted stream url
             };
         });
 

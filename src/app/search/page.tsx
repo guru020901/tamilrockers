@@ -250,21 +250,22 @@ export default function SearchPage() {
                             </div>
 
                             {/* Title Link */}
+                            {/* Title Link */}
                             <h3 style={{ fontSize: '1rem', marginBottom: '10px', lineHeight: '1.4', height: '2.8em', overflow: 'hidden' }}>
-                                {(item.source === '1tamilmv' || item.source === '1tamilblasters' || item.link?.includes('topic')) ? (
-                                    <Link
-                                        href={`/watch/topic-${item.id}?url=${encodeURIComponent(item.link)}&title=${encodeURIComponent(item.title)}`}
-                                        style={{ color: '#fff', textDecoration: 'none', cursor: 'pointer' }}
-                                    >
-                                        {(item.title || '').replace(/Download|Tamil|Review|Online/g, '').trim()}
-                                    </Link>
-                                ) : (item.magnet || (item.magnets && item.magnets[0])) ? (
+                                {(item.magnet || (item.magnets && item.magnets[0])) ? (
                                     <a
                                         href={item.magnet || item.magnets[0].link}
                                         style={{ color: '#fff', textDecoration: 'none', cursor: 'pointer' }}
                                     >
                                         {(item.title || '').replace(/Download|Tamil|Review|Online/g, '').trim()}
                                     </a>
+                                ) : (item.source === '1tamilmv' || item.source === '1tamilblasters' || item.link?.includes('topic')) ? (
+                                    <Link
+                                        href={`/watch/topic-${item.id}?url=${encodeURIComponent(item.link)}&title=${encodeURIComponent(item.title)}`}
+                                        style={{ color: '#fff', textDecoration: 'none', cursor: 'pointer' }}
+                                    >
+                                        {(item.title || '').replace(/Download|Tamil|Review|Online/g, '').trim()}
+                                    </Link>
                                 ) : (
                                     <span>{(item.title || '').replace(/Download|Tamil|Review|Online/g, '').trim()}</span>
                                 )}
