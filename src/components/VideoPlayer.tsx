@@ -130,6 +130,67 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
         setIframeError(true);
     };
 
+    // --- ENHANCED PLAYER LOGIC ---
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [isBuffering, setIsBuffering] = useState(false);
+    const [showControls, setShowControls] = useState(true);
+
+    const onPlay = () => { setIsPlaying(true); setIsBuffering(false); };
+    const onPause = () => setIsPlaying(false);
+    const onWaiting = () => setIsBuffering(true);
+    const onPlaying = () => setIsBuffering(false);
+
+    const togglePlay = () => {
+        if (playerRef.current) {
+            playerRef.current.paused ? playerRef.current.play() : playerRef.current.pause();
+        }
+    };
+
+    const toggleFullscreen = () => {
+        const wrapper = playerRef.current?.parentElement;
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+        } else if (wrapper) {
+            wrapper.requestFullscreen();
+        }
+    };
+
+    // Keyboard Shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (!playerRef.current) return;
+            if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+
+            const video = playerRef.current;
+            switch (e.key.toLowerCase()) {
+                case ' ':
+                case 'k':
+                    e.preventDefault();
+                    video.paused ? video.play() : video.pause();
+                    break;
+                case 'f':
+                    e.preventDefault();
+                    document.fullscreenElement ? document.exitFullscreen() : video.parentElement?.requestFullscreen();
+                    break;
+                case 'arrowright':
+                    e.preventDefault();
+                    video.currentTime += 10;
+                    break;
+                case 'arrowleft':
+                    e.preventDefault();
+                    video.currentTime -= 10;
+                    break;
+                case 'm':
+                    e.preventDefault();
+                    video.muted = !video.muted;
+                    break;
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [cleanUrl]);
+
     return (
         <div style={{ width: '100%', background: '#0a0a0a', borderRadius: '16px', overflow: 'hidden', border: '1px solid #333', boxShadow: '0 20px 50px rgba(0,0,0,0.6)' }}>
             {/* Mode Switcher */}
@@ -237,10 +298,38 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
 
                 {/* NATIVE CLEAN MODE - Direct extracted stream logic */}
                 {mode === 'native-clean' && (
-                    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-                        <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, background: 'linear-gradient(90deg, #00C9FF 0%, #92FE9D 100%)', padding: '5px 12px', borderRadius: '4px', color: '#000', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <Zap size={14} fill="currentColor" /> Ad-Free Clean Stream
+                    <div
+                        style={{ width: '100%', height: '100%', position: 'relative', background: '#000', cursor: showControls ? 'default' : 'none' }}
+                        onDoubleClick={toggleFullscreen}
+                        onMouseEnter={() => setShowControls(true)}
+                        onMouseLeave={() => isPlaying && setShowControls(false)}
+                    >
+                        <div style={{
+                            position: 'absolute', top: 10, left: 10, zIndex: 20,
+                            background: 'linear-gradient(90deg, #00C9FF 0%, #92FE9D 100%)',
+                            padding: '5px 12px', borderRadius: '4px', color: '#000',
+                            fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px',
+                            opacity: showControls ? 1 : 0, transition: 'opacity 0.3s ease'
+                        }}>
+                            <Zap size={14} fill="currentColor" /> Ad-Free Clean Player
                         </div>
+
+                        {/* Buffering Indicator */}
+                        {isBuffering && (
+                            <div style={{
+                                position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                                zIndex: 30, pointerEvents: 'none'
+                            }}>
+                                <Loader size={48} className="animate-spin" color="#00e5ff" />
+                            </div>
+                        )}
+
+                        {/* Click Overlay (Play/Pause) */}
+                        <div
+                            style={{ position: 'absolute', inset: 0, zIndex: 10 }}
+                            onClick={togglePlay}
+                        />
+
                         {cleanType === 'hls' ? (
                             <ReactHlsPlayer
                                 playerRef={playerRef as any}
@@ -249,14 +338,23 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                                 controls
                                 width="100%"
                                 height="100%"
-                                style={{ background: '#000' }}
+                                style={{ background: '#000', outline: 'none' }}
+                                onPlay={onPlay}
+                                onPause={onPause}
+                                onWaiting={onWaiting}
+                                onPlaying={onPlaying}
                             />
                         ) : (
                             <video
+                                ref={playerRef}
                                 src={cleanUrl}
                                 controls
                                 autoPlay
-                                style={{ width: '100%', height: '100%', background: '#000' }}
+                                style={{ width: '100%', height: '100%', background: '#000', outline: 'none' }}
+                                onPlay={onPlay}
+                                onPause={onPause}
+                                onWaiting={onWaiting}
+                                onPlaying={onPlaying}
                             />
                         )}
                     </div>
