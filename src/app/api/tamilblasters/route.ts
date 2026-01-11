@@ -31,8 +31,8 @@ export async function GET(request: Request) {
     prefetchManager.trackQuery(query);
 
     console.log(`[API/TamilBlasters] Searching for: "${query}"`);
-    let browser = null;
-    let page = null;
+    let browser: any = null;
+    let page: any = null;
     let results: any[] = [];
 
     try {
