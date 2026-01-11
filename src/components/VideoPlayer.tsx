@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useRef, useState, useEffect } from 'react';
+import ReactHlsPlayer from 'react-hls-player';
 import { AlertCircle, Server, Cloud, Database, ShieldCheck, Play, Shield, Loader, Activity, Zap, ExternalLink } from 'lucide-react';
 
 interface VideoPlayerProps {
@@ -22,12 +23,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
     // Default mode selection based on available data
     const getDefaultMode = () => {
         if (imdb) return 'cloud';
-        if (watch) return 'native-direct'; // Use direct embed instead of proxy
+        if (watch) return 'native-direct'; // Start with direct, upgrade to clean if possible
         if (magnets && magnets.length > 0) return 'p2p';
         return 'cloud';
     };
 
-    const [mode, setMode] = useState<'native-direct' | 'native-proxy' | 'cloud' | 'p2p'>(getDefaultMode());
+    const [mode, setMode] = useState<'native-direct' | 'native-clean' | 'cloud' | 'p2p'>(getDefaultMode());
     const [activeServer, setActiveServer] = useState(0);
 
     // IMDB state
@@ -41,8 +42,44 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
     const [streamUrl, setStreamUrl] = useState<string>('');
     const [swarmStatus, setSwarmStatus] = useState<string>('');
 
+    // Native Clean State
+    const [cleanUrl, setCleanUrl] = useState<string>('');
+    const [cleanType, setCleanType] = useState<string>('');
+    const [isExtracting, setIsExtracting] = useState(false);
+    const playerRef = useRef<HTMLVideoElement>(null);
+
     // Error state
     const [iframeError, setIframeError] = useState(false);
+
+    // Effect: Try to extract clean stream when watch URL is available
+    useEffect(() => {
+        if (watch && (mode === 'native-direct' || mode === 'native-clean')) {
+            const extractStream = async () => {
+                if (cleanUrl) return; // Already extracted
+
+                setIsExtracting(true);
+                try {
+                    const res = await fetch(`/api/extract?url=${encodeURIComponent(watch)}`);
+                    const data = await res.json();
+
+                    if (data.success && data.streamUrl) {
+                        console.log('[Direct Stream] Extracted:', data.streamUrl);
+                        setCleanUrl(data.streamUrl);
+                        setCleanType(data.type);
+                        setMode('native-clean');
+                    }
+                } catch (e) {
+                    console.error('[Direct Stream] Extraction failed:', e);
+                } finally {
+                    setIsExtracting(false);
+                }
+            };
+
+            // Short delay to allow UI to settle
+            const timer = setTimeout(extractStream, 500);
+            return () => clearTimeout(timer);
+        }
+    }, [watch, cleanUrl, mode]);
 
     // Auto IMDB lookup based on title
     useEffect(() => {
@@ -99,15 +136,16 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
             <div style={{ display: 'flex', background: '#111', borderBottom: '1px solid #222', overflowX: 'auto' }}>
                 {watch && (
                     <button
-                        onClick={() => { setMode('native-direct'); setIframeError(false); }}
+                        onClick={() => { setMode(cleanUrl ? 'native-clean' : 'native-direct'); setIframeError(false); }}
                         style={{
-                            flex: 1, padding: '14px', background: mode === 'native-direct' ? '#1a1a1a' : 'transparent',
-                            border: 'none', color: mode === 'native-direct' ? '#ff5722' : '#666',
+                            flex: 1, padding: '14px', background: mode.includes('native') ? '#1a1a1a' : 'transparent',
+                            border: 'none', color: mode.includes('native') ? '#ff5722' : '#666',
                             cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                            borderBottom: mode === 'native-direct' ? '2px solid #ff5722' : 'none', minWidth: '120px'
+                            borderBottom: mode.includes('native') ? '2px solid #ff5722' : 'none', minWidth: '120px'
                         }}
                     >
-                        <Activity size={18} /> NATIVE PRO
+                        {isExtracting ? <Loader size={18} className="animate-spin" /> : <Activity size={18} />}
+                        {mode === 'native-clean' ? 'NATIVE CLEAN' : 'NATIVE DIRECT'}
                     </button>
                 )}
                 <button
@@ -197,10 +235,37 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
             {/* Player Viewport */}
             <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: '#000' }}>
 
-                {/* NATIVE DIRECT MODE - Embed without proxy */}
+                {/* NATIVE CLEAN MODE - Direct extracted stream logic */}
+                {mode === 'native-clean' && (
+                    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+                        <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, background: 'linear-gradient(90deg, #00C9FF 0%, #92FE9D 100%)', padding: '5px 12px', borderRadius: '4px', color: '#000', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Zap size={14} fill="currentColor" /> Ad-Free Clean Stream
+                        </div>
+                        {cleanType === 'hls' ? (
+                            <ReactHlsPlayer
+                                playerRef={playerRef as any}
+                                src={cleanUrl}
+                                autoPlay
+                                controls
+                                width="100%"
+                                height="100%"
+                                style={{ background: '#000' }}
+                            />
+                        ) : (
+                            <video
+                                src={cleanUrl}
+                                controls
+                                autoPlay
+                                style={{ width: '100%', height: '100%', background: '#000' }}
+                            />
+                        )}
+                    </div>
+                )}
+
+                {/* NATIVE DIRECT MODE - Fallback to Embed */}
                 {mode === 'native-direct' && watch && (
                     <div style={{ width: '100%', height: '100%' }}>
-                        <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, background: 'rgba(76, 175, 80, 0.9)', padding: '5px 10px', borderRadius: '4px', color: '#fff', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, background: 'rgba(255, 87, 34, 0.9)', padding: '5px 10px', borderRadius: '4px', color: '#fff', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <ShieldCheck size={14} /> Native Direct Embed
                         </div>
 
