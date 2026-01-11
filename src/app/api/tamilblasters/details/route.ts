@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
+import { fetchHtmlWithBypass } from '@/lib/proxy';
 
 /**
- * PUPPETEER-FREE 1TamilBlasters Details Scraper
- * Uses fetch + regex parsing (works on Vercel serverless!)
+ * 🚀 ADVANCED 1TamilBlasters Details Scraper with Cloudflare Bypass
+ * Uses multi-layer bypass for magnet extraction
  */
 
 export async function GET(request: Request) {
@@ -13,23 +14,11 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: 'URL parameter required' }, { status: 400 });
     }
 
-    console.log(`[API/TamilBlasters/Details] Fetching: ${targetUrl}`);
+    console.log(`[API/TamilBlasters/Details] Fetching with bypass: ${targetUrl}`);
 
     try {
-        const response = await fetch(targetUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-            },
-            signal: AbortSignal.timeout(15000),
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const html = await response.text();
+        // Use advanced bypass to fetch the details page
+        const html = await fetchHtmlWithBypass(targetUrl, 'https://www.1tamilblasters.business');
 
         // Extract magnet links using regex
         const magnets: any[] = [];
@@ -38,7 +27,6 @@ export async function GET(request: Request) {
         let match;
         while ((match = magnetPattern.exec(html)) !== null) {
             const magnet = match[0];
-            // Try to extract title from magnet
             const dnMatch = magnet.match(/dn=([^&]+)/);
             const title = dnMatch ? decodeURIComponent(dnMatch[1].replace(/\+/g, ' ')) : 'Unknown';
 
@@ -84,7 +72,6 @@ export async function GET(request: Request) {
             const iframeMatch = pattern.exec(html);
             if (iframeMatch) {
                 const src = iframeMatch[1];
-                // Skip ads and non-video iframes
                 if (!src.includes('googlead') && !src.includes('facebook') && !src.includes('twitter')) {
                     watch = src;
                     break;
@@ -92,7 +79,7 @@ export async function GET(request: Request) {
             }
         }
 
-        console.log(`[API/TamilBlasters/Details] Found ${uniqueMagnets.length} magnets, poster: ${!!poster}, watch: ${!!watch}`);
+        console.log(`[API/TamilBlasters/Details] Found ${uniqueMagnets.length} magnets (via bypass)`);
 
         return NextResponse.json({
             success: true,

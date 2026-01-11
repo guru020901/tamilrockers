@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { searchCache, circuitBreaker } from '@/lib/cache';
 import { performanceMonitor, prefetchManager } from '@/lib/advanced';
+import { fetchHtmlWithBypass } from '@/lib/proxy';
 
 /**
- * PUPPETEER-FREE 1TamilBlasters Scraper
- * Uses fetch + regex parsing (works on Vercel serverless!)
+ * 🚀 ADVANCED 1TamilBlasters Scraper with Cloudflare Bypass
+ * Uses multi-layer bypass: Enhanced Headers → CORS Proxies → ScraperAPI
  */
 
 const DOMAIN = 'https://www.1tamilblasters.business';
@@ -30,27 +31,12 @@ export async function GET(request: Request) {
     }
 
     prefetchManager.trackQuery(query);
-    console.log(`[API/TamilBlasters] Searching for: "${query}"`);
+    console.log(`[API/TamilBlasters] Searching for: "${query}" with Cloudflare bypass`);
 
     try {
-        // Fetch the search page using simple HTTP request
+        // Use advanced bypass to fetch the search page
         const searchUrl = `${DOMAIN}/?s=${encodeURIComponent(query)}`;
-
-        const response = await fetch(searchUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Referer': DOMAIN,
-            },
-            signal: AbortSignal.timeout(15000), // 15s timeout
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const html = await response.text();
+        const html = await fetchHtmlWithBypass(searchUrl, DOMAIN);
 
         // Parse results using regex (no Puppeteer needed!)
         const results: any[] = [];
@@ -128,7 +114,7 @@ export async function GET(request: Request) {
             performanceMonitor.track('tamilblasters-search', startTime);
         }
 
-        console.log(`[API/TamilBlasters] Found ${results.length} results`);
+        console.log(`[API/TamilBlasters] Found ${results.length} results (via bypass)`);
         return NextResponse.json({ success: true, results });
 
     } catch (err: any) {
