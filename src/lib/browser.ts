@@ -1,19 +1,35 @@
 import puppeteer from 'puppeteer-core';
-import chromium from '@sparticuz/chromium';
 
 // Helper to get a browser instance optimized for runtime (Vercel vs Local)
 export async function getBrowser() {
     let browser;
 
     if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_VERSION) {
-        // Vercel / Lambda Environment
-        browser = await puppeteer.launch({
-            args: (chromium as any).args,
-            defaultViewport: { width: 1280, height: 720 },
-            executablePath: await (chromium as any).executablePath(),
-            headless: (chromium as any).headless,
-            ignoreHTTPSErrors: true,
-        } as any);
+        // Vercel / Lambda Environment - Load chromium dynamically
+        try {
+            // Dynamic import to avoid build-time issues
+            const chromium = await import('@sparticuz/chromium');
+
+            // Ensure chromium is properly extracted
+            chromium.default.setHeadlessMode = true;
+            chromium.default.setGraphicsMode = false;
+
+            const executablePath = await chromium.default.executablePath();
+            console.log('[Browser] Chromium path:', executablePath);
+
+            browser = await puppeteer.launch({
+                args: chromium.default.args,
+                defaultViewport: { width: 1280, height: 720 },
+                executablePath: executablePath,
+                headless: true,
+                ignoreHTTPSErrors: true,
+            });
+
+            console.log('[Browser] Launched successfully on Vercel');
+        } catch (chromiumError: any) {
+            console.error('[Browser] Chromium launch failed:', chromiumError.message);
+            throw new Error('Chromium failed to launch: ' + chromiumError.message);
+        }
     } else {
         // Local Development Environment
         try {
@@ -23,13 +39,15 @@ export async function getBrowser() {
                 headless: "new",
                 args: ['--no-sandbox', '--disable-setuid-sandbox']
             });
-        } catch (e) {
-            console.log("Local puppeteer fallback failed, trying core with default paths...");
+            console.log('[Browser] Launched locally with puppeteer');
+        } catch (e: any) {
+            console.log("Local puppeteer fallback failed:", e.message);
             browser = await puppeteer.launch({
                 channel: 'chrome',
-                headless: true, // Use boolean for core if "new" is problematic
+                headless: true,
                 args: ['--no-sandbox', '--disable-setuid-sandbox']
             });
+            console.log('[Browser] Launched locally with puppeteer-core');
         }
     }
 
