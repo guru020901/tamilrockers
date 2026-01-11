@@ -73,7 +73,7 @@ async function searchTPB(query: string, customDomain: string | null) {
                         return items;
                     });
 
-                    results.push(...data.map(item => ({ ...item, source: 'tpb' })));
+                    results.push(...data.map((item: any) => ({ ...item, source: 'tpb' })));
                     break;
                 }
             } catch (e) { }
@@ -163,7 +163,7 @@ async function search1337x(query: string, customDomain: string | null) {
                 });
                 return items;
             });
-            results.push(...data.map(item => ({ ...item, source: '1337x' })));
+            results.push(...data.map((item: any) => ({ ...item, source: '1337x' })));
         }
     } catch (err: any) {
         console.error('[API/Torrents/1337x] Search error:', err.message);
