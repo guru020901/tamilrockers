@@ -59,23 +59,77 @@ export async function GET(request: Request) {
         // Merge patterns
         const allHlsPatterns = [...hlsPatterns, ...providerPatterns];
 
-        for (const pattern of allHlsPatterns) {
-            const match = pattern.exec(html);
-            if (match) {
-                streamUrl = match[1];
-                if (streamUrl.includes('.m3u8')) type = 'hls';
-                else type = 'mp4';
-                break;
+        // 2. Generic MP4 patterns (Moved up for scope access)
+        const mp4Patterns = [
+            /file\s*:\s*["']([^"']+\.mp4[^"']*)["']/i,
+            /source\s*:\s*["']([^"']+\.mp4[^"']*)["']/i,
+            /src\s*:\s*["']([^"']+\.mp4[^"']*)["']/i,
+            /["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i, // Aggressive
+        ];
+
+        // Helper to unpack Dean Edwards packed scripts
+        const unpack = (code: string): string => {
+            try {
+                // Detect standard packer pattern
+                const indentifier = /eval\(function\(p,a,c,k,e,d\)/;
+                if (!indentifier.test(code)) return code;
+
+                // Extract the parameters
+                const params = /return p}\('(.+?)',(\d+),(\d+),'(.+?)'\.split/.exec(code);
+                if (!params) return code;
+
+                let [_, p, aStr, cStr, kStr] = params;
+                let k = kStr.split('|');
+
+                // Heuristic Unpack: Check the dictionary for URLs
+                const foundUrl = k.find(word => word.startsWith('http') && (word.includes('.m3u8') || word.includes('.mp4')));
+                if (foundUrl) return `var src="${foundUrl}";`;
+
+                return code;
+            } catch (e) {
+                return code;
+            }
+        };
+
+        // 1.1 Unpack and Search (Packed Scripts)
+        const packedScripts = html.match(/eval\(function\(p,a,c,k,e,d\)[\s\S]+?\.split\('\|'\)\)\)/g);
+        if (packedScripts) {
+            console.log(`[API/Extract] Found ${packedScripts.length} packed scripts. Unpacking...`);
+            for (const script of packedScripts) {
+                const unpacked = unpack(script);
+                // Search unpacked content
+                const hlsMatch = hlsPatterns.find(p => p.test(unpacked))?.exec(unpacked);
+                if (hlsMatch) {
+                    streamUrl = hlsMatch[1];
+                    type = 'hls';
+                    break;
+                }
+                const mp4Match = mp4Patterns.find(p => p.test(unpacked))?.exec(unpacked);
+                if (mp4Match) {
+                    streamUrl = mp4Match[1];
+                    type = 'mp4';
+                    break;
+                }
             }
         }
 
-        // 1.5 Base64 encoded HLS (common in some players)
         if (!streamUrl) {
-            // Look for obvious base64 strings that start with http and end with m3u8
-            // aHR0c... => http...
+            // 1.2 Normal Search
+            for (const pattern of allHlsPatterns) {
+                const match = pattern.exec(html);
+                if (match) {
+                    streamUrl = match[1];
+                    if (streamUrl.includes('.m3u8')) type = 'hls';
+                    else type = 'mp4';
+                    break;
+                }
+            }
+        }
+
+        // 1.5 Base64 encoded HLS
+        if (!streamUrl) {
             const base64Pattern = /["']([a-zA-Z0-9+/=]{20,})["']/;
             let b64Match;
-            // Iterate over potential base64 strings (simple check)
             const globalB64 = new RegExp(base64Pattern, 'g');
             while ((b64Match = globalB64.exec(html)) !== null) {
                 try {
@@ -90,13 +144,6 @@ export async function GET(request: Request) {
         }
 
         // 2. Generic MP4 Finder (if HLS not found)
-        const mp4Patterns = [
-            /file\s*:\s*["']([^"']+\.mp4[^"']*)["']/i,
-            /source\s*:\s*["']([^"']+\.mp4[^"']*)["']/i,
-            /src\s*:\s*["']([^"']+\.mp4[^"']*)["']/i,
-            /["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i, // Aggressive
-        ];
-
         if (!streamUrl) {
             for (const pattern of mp4Patterns) {
                 const match = pattern.exec(html);
@@ -109,7 +156,6 @@ export async function GET(request: Request) {
         }
 
         // 3. ⛏️ DEEP MINING: Recursive Iframe Extraction
-        // If we haven't found a direct stream, check if there's a nested iframe/embed that holds the treasure.
         if (!streamUrl) {
             const iframePatterns = [
                 /<iframe[^>]+src=["'](https?:\/\/[^"']+)["']/i,
@@ -126,37 +172,41 @@ export async function GET(request: Request) {
                         const iframeHtml = await fetchHtmlWithBypass(iframeUrl, new URL(iframeUrl).origin);
 
                         // Repeat search on iframe content
-                        // (Re-using the same regex patterns)
-                        const deepHlsMatch = hlsPatterns.find(p => p.test(iframeHtml))?.exec(iframeHtml);
-                        if (deepHlsMatch) {
-                            streamUrl = deepHlsMatch[1];
-                            type = 'hls';
-                            break;
+                        // Unpack first
+                        const deepPackedScripts = iframeHtml.match(/eval\(function\(p,a,c,k,e,d\)[\s\S]+?\.split\('\|'\)\)\)/g);
+                        if (deepPackedScripts) {
+                            for (const script of deepPackedScripts) {
+                                const unpacked = unpack(script);
+                                const deepMp4Match = mp4Patterns.find(p => p.test(unpacked))?.exec(unpacked);
+                                if (deepMp4Match) {
+                                    streamUrl = deepMp4Match[1];
+                                    type = 'mp4';
+                                    break;
+                                }
+                            }
                         }
 
-                        const deepMp4Match = mp4Patterns.find(p => p.test(iframeHtml))?.exec(iframeHtml);
-                        if (deepMp4Match) {
-                            streamUrl = deepMp4Match[1];
-                            type = 'mp4';
-                            break;
+                        if (!streamUrl) {
+                            const deepHlsMatch = hlsPatterns.find(p => p.test(iframeHtml))?.exec(iframeHtml);
+                            if (deepHlsMatch) {
+                                streamUrl = deepHlsMatch[1];
+                                type = 'hls';
+                            }
                         }
 
-                        // Check for Packed/Base64 in iframe
-                        // ... (Simplified for brevity, assuming main patterns cover most)
-
-                        // Check specifically for packed in iframe
-                        const deepPackedMatch = packedPattern.exec(iframeHtml);
-                        if (deepPackedMatch) {
-                            // If we found a packed script in the iframe, it's highly likely the stream is there.
-                            // For now, we can't easily unpack in this pass without code duplication or a helper function.
-                            // But often the simple regex finds the m3u8 inside the packed string anyway.
+                        if (!streamUrl) {
+                            const deepMp4Match = mp4Patterns.find(p => p.test(iframeHtml))?.exec(iframeHtml);
+                            if (deepMp4Match) {
+                                streamUrl = deepMp4Match[1];
+                                type = 'mp4';
+                            }
                         }
 
                     } catch (deepErr) {
                         console.warn(`[API/Extract] Deep Mining failed for ${iframeUrl}`);
                     }
                 }
-                if (streamUrl) break; // Break from iframe loop if stream found
+                if (streamUrl) break;
             }
         }
 
@@ -172,8 +222,8 @@ export async function GET(request: Request) {
                 streamUrl,
                 type,
                 headers: {
-                    // Pass headers needed for playback (often Referer/Origin is required)
-                    Referer: url,
+                    Referer: url, // Or iframe origin if deep mined
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 }
             });
         }
