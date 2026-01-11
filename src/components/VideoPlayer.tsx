@@ -208,6 +208,26 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
         position: 'relative', zIndex: 1
     };
 
+    // Mobile Gestures
+    const touchStart = useRef<number>(0);
+    const handleTouchStart = (e: React.TouchEvent) => {
+        touchStart.current = e.touches[0].clientX;
+    };
+    const handleTouchEnd = (e: React.TouchEvent) => {
+        if (!playerRef.current) return;
+        const diff = e.changedTouches[0].clientX - touchStart.current;
+        if (Math.abs(diff) < 10) {
+            // Tap = Toggle Controls / Play
+            setShowControls(!showControls);
+        } else if (diff > 50) {
+            // Swipe Right = Seek Forward
+            playerRef.current.currentTime += 10;
+        } else if (diff < -50) {
+            // Swipe Left = Seek Backward
+            playerRef.current.currentTime -= 10;
+        }
+    };
+
     return (
         <div style={containerStyle}>
             {/* Mode Switcher (Hidden in Cinematic unless hovered) */}
@@ -215,7 +235,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                 display: 'flex', background: isCinematic ? 'rgba(0,0,0,0.8)' : '#111',
                 borderBottom: '1px solid #222', overflowX: 'auto',
                 position: isCinematic ? 'absolute' : 'static', top: 0, left: 0, right: 0, zIndex: 50,
-                opacity: (isCinematic && !showControls) ? 0 : 1, transition: 'opacity 0.3s'
+                opacity: (isCinematic && !showControls) ? 0 : 1, transition: 'opacity 0.3s',
+                scrollbarWidth: 'none' // Hide scrollbar for cleaner mobile look
             }}>
                 {watch && (
                     <button
@@ -224,11 +245,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                             flex: 1, padding: '14px', background: mode.includes('native') ? '#1a1a1a' : 'transparent',
                             border: 'none', color: mode.includes('native') ? '#ff5722' : '#666',
                             cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                            borderBottom: mode.includes('native') ? '2px solid #ff5722' : 'none', minWidth: '120px'
+                            borderBottom: mode.includes('native') ? '2px solid #ff5722' : 'none', minWidth: '120px', whiteSpace: 'nowrap'
                         }}
                     >
                         {isExtracting ? <Loader size={18} className="animate-spin" /> : <Activity size={18} />}
-                        {mode === 'native-clean' ? 'NATIVE CLEAN' : 'NATIVE DIRECT'}
+                        {mode === 'native-clean' ? 'CLEAN' : 'DIRECT'}
                     </button>
                 )}
                 <button
@@ -334,10 +355,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                 {/* NATIVE CLEAN MODE - Direct extracted stream logic */}
                 {mode === 'native-clean' && (
                     <div
-                        style={{ width: '100%', height: '100%', position: 'relative', background: '#000', cursor: showControls ? 'default' : 'none' }}
+                        style={{ width: '100%', height: '100%', position: 'relative', background: '#000', cursor: showControls ? 'default' : 'none', touchAction: 'none' }}
                         onDoubleClick={toggleFullscreen}
                         onMouseEnter={() => setShowControls(true)}
                         onMouseLeave={() => isPlaying && setShowControls(false)}
+                        onTouchStart={handleTouchStart}
+                        onTouchEnd={handleTouchEnd}
                     >
                         <div style={{
                             position: 'absolute', top: 10, left: 10, zIndex: 20,
@@ -370,7 +393,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                                 playerRef={playerRef as any}
                                 src={cleanUrl}
                                 autoPlay
-                                controls
+                                controls={showControls}
                                 width="100%"
                                 height="100%"
                                 style={{ background: '#000', outline: 'none' }}
@@ -383,7 +406,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                             <video
                                 ref={playerRef}
                                 src={cleanUrl}
-                                controls
+                                controls={showControls}
                                 autoPlay
                                 style={{ width: '100%', height: '100%', background: '#000', outline: 'none' }}
                                 onPlay={onPlay}
@@ -392,10 +415,21 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                                 onPlaying={onPlaying}
                             />
                         )}
+
+                        {/* Custom Touch Overlay for Mobile */}
+                        <div style={{
+                            position: 'absolute', inset: 0, zIndex: 100, pointerEvents: 'none',
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 20px',
+                            opacity: showControls ? 1 : 0, transition: 'opacity 0.2s'
+                        }}>
+                            <div style={{ padding: '10px', background: 'rgba(0,0,0,0.5)', borderRadius: '50%' }}><Play size={20} style={{ transform: 'rotate(180deg)' }} /></div>
+                            {!isPlaying && <div style={{ padding: '15px', background: 'rgba(0,0,0,0.5)', borderRadius: '50%' }}><Play size={30} /></div>}
+                            <div style={{ padding: '10px', background: 'rgba(0,0,0,0.5)', borderRadius: '50%' }}><Play size={20} /></div>
+                        </div>
                     </div>
                 )}
 
-                {/* NATIVE DIRECT MODE - Fallback to Embed with Ad-Shield */}
+                {/* NATIVE DIRECT MODE - Fallback to Embed with Hardened Sandbox */}
                 {mode === 'native-direct' && watch && (
                     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
                         <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, background: 'rgba(255, 87, 34, 0.9)', padding: '5px 10px', borderRadius: '4px', color: '#fff', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -419,11 +453,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                                     boxShadow: '0 0 30px rgba(255, 87, 34, 0.6)', transform: 'scale(1.1)'
                                 }}>
                                     <Play size={32} fill="white" />
-                                    <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>Click to Unlock Stream</span>
+                                    <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>Tap to Play</span>
                                 </div>
                                 <p style={{ marginTop: '20px', color: '#aaa', fontSize: '0.9rem' }}>
                                     <Shield size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }} />
-                                    Ad-Shield Active: Popups blocked
+                                    Ad-Shield Active
                                 </p>
                             </div>
                         )}
@@ -452,6 +486,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                                 allowFullScreen
                                 allow="autoplay; fullscreen; encrypted-media"
                                 referrerPolicy="no-referrer"
+                                sandbox="allow-scripts allow-same-origin allow-presentation"
                                 onError={handleIframeError}
                             />
                         )}

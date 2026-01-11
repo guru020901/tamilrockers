@@ -40,7 +40,6 @@ export async function GET(request: Request) {
         }
 
         // 1. Guxhag / Hglink / HQtier (Generic HLS Finder)
-        // Look for typical m3u8 patterns including those inside JS strings
         const hlsPatterns = [
             /file\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i,
             /source\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i,
@@ -49,11 +48,23 @@ export async function GET(request: Request) {
             /=\s*["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i,
         ];
 
-        for (const pattern of hlsPatterns) {
+        // 1.1 Provider Specific Logic
+        // Filemoon / Vidmoly / Streamwish often hide links in specific variables
+        const providerPatterns = [
+            /window\.s\s*=\s*['"]([^'"]+)['"]/, // Common formatted string
+            /jwplayer\("vplayer"\)\.setup\({[\s\S]*?file:\s*"([^"]+)"/, // JWPlayer setup
+            /new\s+Playerjs\({[\s\S]*?file:\s*"([^"]+)"/, // PlayerJS
+        ];
+
+        // Merge patterns
+        const allHlsPatterns = [...hlsPatterns, ...providerPatterns];
+
+        for (const pattern of allHlsPatterns) {
             const match = pattern.exec(html);
             if (match) {
                 streamUrl = match[1];
-                type = 'hls';
+                if (streamUrl.includes('.m3u8')) type = 'hls';
+                else type = 'mp4';
                 break;
             }
         }
