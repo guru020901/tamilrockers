@@ -44,8 +44,10 @@ class LRUCache<T> {
         // Evict oldest if at capacity
         if (this.cache.size >= this.maxSize && !this.cache.has(key)) {
             const firstKey = this.cache.keys().next().value;
-            this.cache.delete(firstKey);
-            console.log(`[Cache EVICT] ${firstKey}`);
+            if (firstKey) {
+                this.cache.delete(firstKey);
+                console.log(`[Cache EVICT] ${firstKey}`);
+            }
         }
 
         this.cache.set(key, {
