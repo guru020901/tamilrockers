@@ -10,10 +10,6 @@ export async function getBrowser() {
             // Dynamic import to avoid build-time issues
             const chromium = await import('@sparticuz/chromium');
 
-            // Ensure chromium is properly extracted
-            chromium.default.setHeadlessMode = true;
-            chromium.default.setGraphicsMode = false;
-
             const executablePath = await chromium.default.executablePath();
             console.log('[Browser] Chromium path:', executablePath);
 
@@ -22,8 +18,7 @@ export async function getBrowser() {
                 defaultViewport: { width: 1280, height: 720 },
                 executablePath: executablePath,
                 headless: true,
-                ignoreHTTPSErrors: true,
-            });
+            } as any);
 
             console.log('[Browser] Launched successfully on Vercel');
         } catch (chromiumError: any) {

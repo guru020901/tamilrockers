@@ -51,6 +51,19 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch }) => {
     // Sniffer Logic (Native Mode)
     useEffect(() => {
         if (mode === 'native' && watch && !nativeUrl) {
+            // On Vercel/production, skip localhost sniffing and go directly to iframe
+            const isProduction = typeof window !== 'undefined' &&
+                !window.location.hostname.includes('localhost') &&
+                !window.location.hostname.includes('127.0.0.1');
+
+            if (isProduction) {
+                // Skip localhost sniffing, directly use proxy iframe
+                setSniffStatus('Native Stream Ready (Proxy Mode)');
+                setTimeout(() => setMode('native-iframe'), 500);
+                return;
+            }
+
+            // Local development: try localhost sniffing
             setIsSniffing(true);
             setError(null);
             setSniffStatus('Initializing High-Tech Stream Sniffer...');
