@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import ReactHlsPlayer from 'react-hls-player';
-import { AlertCircle, Server, Cloud, Database, ShieldCheck, Play, Shield, Loader, Activity, Zap, ExternalLink } from 'lucide-react';
+import { Play, Pause, Activity, Loader, Cloud, Database, Wifi, Shield, ShieldCheck, ExternalLink, Zap, Server, AlertCircle, Maximize, Minimize, Settings } from 'lucide-react';
 
 interface VideoPlayerProps {
     magnets: string[];
@@ -191,23 +191,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [cleanUrl]);
 
-    // Cinematic Mode State
-    const [isCinematic, setIsCinematic] = useState(false);
-    const [adShieldActive, setAdShieldActive] = useState(true);
-
-    const toggleCinematic = () => setIsCinematic(!isCinematic);
-    const unlockAdShield = () => setAdShieldActive(false);
-
-    // Dynamic Styles for Cinematic Mode
-    const containerStyle: React.CSSProperties = isCinematic ? {
-        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999,
-        background: '#000', borderRadius: 0
-    } : {
-        width: '100%', background: '#0a0a0a', borderRadius: '16px', overflow: 'hidden',
-        border: '1px solid #333', boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
-        position: 'relative', zIndex: 1
-    };
-
     // Mobile Gestures
     const touchStart = useRef<number>(0);
     const handleTouchStart = (e: React.TouchEvent) => {
@@ -228,15 +211,50 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
         }
     };
 
+    // Fullscreen Logic
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+
+    useEffect(() => {
+        const handleChange = () => setIsFullscreen(!!document.fullscreenElement);
+        document.addEventListener('fullscreenchange', handleChange);
+        return () => document.removeEventListener('fullscreenchange', handleChange);
+    }, []);
+
+    const toggleFullscreenMode = async () => {
+        if (!containerRef.current) return;
+        try {
+            if (document.fullscreenElement) {
+                await document.exitFullscreen();
+            } else {
+                await containerRef.current.requestFullscreen();
+            }
+        } catch (e) {
+            console.error('Fullscreen error:', e);
+        }
+    };
+
+    // Cleanup AdShield/Cinematic states
+    const [adShieldActive, setAdShieldActive] = useState(true);
+    const unlockAdShield = () => setAdShieldActive(false);
+
+    const containerStyle: React.CSSProperties = isFullscreen ? {
+        width: '100vw', height: '100vh', background: '#000', borderRadius: 0
+    } : {
+        width: '100%', background: '#0a0a0a', borderRadius: '16px', overflow: 'hidden',
+        border: '1px solid #333', boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+        position: 'relative', zIndex: 1
+    };
+
     return (
-        <div style={containerStyle}>
-            {/* Mode Switcher (Hidden in Cinematic unless hovered) */}
+        <div ref={containerRef} style={containerStyle}>
+            {/* Mode Switcher (Auto-hide in Fullscreen) */}
             <div style={{
-                display: 'flex', background: isCinematic ? 'rgba(0,0,0,0.8)' : '#111',
+                display: 'flex', background: isFullscreen ? 'rgba(0,0,0,0.8)' : '#111',
                 borderBottom: '1px solid #222', overflowX: 'auto',
-                position: isCinematic ? 'absolute' : 'static', top: 0, left: 0, right: 0, zIndex: 50,
-                opacity: (isCinematic && !showControls) ? 0 : 1, transition: 'opacity 0.3s',
-                scrollbarWidth: 'none' // Hide scrollbar for cleaner mobile look
+                position: isFullscreen ? 'absolute' : 'static', top: 0, left: 0, right: 0, zIndex: 50,
+                opacity: (isFullscreen && !showControls) ? 0 : 1, transition: 'opacity 0.3s',
+                scrollbarWidth: 'none'
             }}>
                 {watch && (
                     <button
@@ -275,17 +293,17 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                     <Database size={18} /> P2P
                 </button>
 
-                {/* Cinematic Toggle */}
+                {/* Fullscreen Toggle */}
                 <button
-                    onClick={toggleCinematic}
+                    onClick={toggleFullscreenMode}
                     style={{
-                        padding: '0 20px', background: isCinematic ? '#4CAF50' : 'transparent',
-                        border: 'none', color: isCinematic ? '#fff' : '#666',
+                        padding: '0 20px', background: isFullscreen ? '#4CAF50' : 'transparent',
+                        border: 'none', color: isFullscreen ? '#fff' : '#666',
                         cursor: 'pointer', fontWeight: 'bold', borderLeft: '1px solid #222'
                     }}
-                    title="Toggle Cinematic Mode"
+                    title="Toggle Fullscreen"
                 >
-                    {isCinematic ? <Shield size={18} /> : <div style={{ border: '2px solid currentColor', width: '16px', height: '10px', borderRadius: '2px' }} />}
+                    {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
                 </button>
             </div>
 
@@ -350,7 +368,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
             )}
 
             {/* Player Viewport */}
-            <div style={{ position: 'relative', width: '100%', height: isCinematic ? '100%' : 'auto', aspectRatio: isCinematic ? 'auto' : '16/9', background: '#000' }}>
+            <div style={{ position: 'relative', width: '100%', height: isFullscreen ? '100%' : 'auto', aspectRatio: isFullscreen ? 'auto' : '16/9', background: '#000' }}>
 
                 {/* NATIVE CLEAN MODE - Direct extracted stream logic */}
                 {mode === 'native-clean' && (
@@ -481,7 +499,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                             </div>
                         ) : (
                             <iframe
-                                src={watch}
+                                src={`/api/proxy?url=${encodeURIComponent(watch)}`}
                                 style={{ width: '100%', height: '100%', border: 'none', pointerEvents: adShieldActive ? 'none' : 'auto' }}
                                 allowFullScreen
                                 allow="autoplay; fullscreen; encrypted-media"
