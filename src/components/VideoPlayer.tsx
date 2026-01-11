@@ -486,7 +486,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                                 allowFullScreen
                                 allow="autoplay; fullscreen; encrypted-media"
                                 referrerPolicy="no-referrer"
-                                sandbox="allow-scripts allow-same-origin allow-presentation"
                                 onError={handleIframeError}
                             />
                         )}
