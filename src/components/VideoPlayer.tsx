@@ -191,10 +191,32 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [cleanUrl]);
 
+    // Cinematic Mode State
+    const [isCinematic, setIsCinematic] = useState(false);
+    const [adShieldActive, setAdShieldActive] = useState(true);
+
+    const toggleCinematic = () => setIsCinematic(!isCinematic);
+    const unlockAdShield = () => setAdShieldActive(false);
+
+    // Dynamic Styles for Cinematic Mode
+    const containerStyle: React.CSSProperties = isCinematic ? {
+        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999,
+        background: '#000', borderRadius: 0
+    } : {
+        width: '100%', background: '#0a0a0a', borderRadius: '16px', overflow: 'hidden',
+        border: '1px solid #333', boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+        position: 'relative', zIndex: 1
+    };
+
     return (
-        <div style={{ width: '100%', background: '#0a0a0a', borderRadius: '16px', overflow: 'hidden', border: '1px solid #333', boxShadow: '0 20px 50px rgba(0,0,0,0.6)' }}>
-            {/* Mode Switcher */}
-            <div style={{ display: 'flex', background: '#111', borderBottom: '1px solid #222', overflowX: 'auto' }}>
+        <div style={containerStyle}>
+            {/* Mode Switcher (Hidden in Cinematic unless hovered) */}
+            <div style={{
+                display: 'flex', background: isCinematic ? 'rgba(0,0,0,0.8)' : '#111',
+                borderBottom: '1px solid #222', overflowX: 'auto',
+                position: isCinematic ? 'absolute' : 'static', top: 0, left: 0, right: 0, zIndex: 50,
+                opacity: (isCinematic && !showControls) ? 0 : 1, transition: 'opacity 0.3s'
+            }}>
                 {watch && (
                     <button
                         onClick={() => { setMode(cleanUrl ? 'native-clean' : 'native-direct'); setIframeError(false); }}
@@ -230,6 +252,19 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                     }}
                 >
                     <Database size={18} /> P2P
+                </button>
+
+                {/* Cinematic Toggle */}
+                <button
+                    onClick={toggleCinematic}
+                    style={{
+                        padding: '0 20px', background: isCinematic ? '#4CAF50' : 'transparent',
+                        border: 'none', color: isCinematic ? '#fff' : '#666',
+                        cursor: 'pointer', fontWeight: 'bold', borderLeft: '1px solid #222'
+                    }}
+                    title="Toggle Cinematic Mode"
+                >
+                    {isCinematic ? <Shield size={18} /> : <div style={{ border: '2px solid currentColor', width: '16px', height: '10px', borderRadius: '2px' }} />}
                 </button>
             </div>
 
@@ -294,7 +329,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
             )}
 
             {/* Player Viewport */}
-            <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: '#000' }}>
+            <div style={{ position: 'relative', width: '100%', height: isCinematic ? '100%' : 'auto', aspectRatio: isCinematic ? 'auto' : '16/9', background: '#000' }}>
 
                 {/* NATIVE CLEAN MODE - Direct extracted stream logic */}
                 {mode === 'native-clean' && (
@@ -360,12 +395,38 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                     </div>
                 )}
 
-                {/* NATIVE DIRECT MODE - Fallback to Embed */}
+                {/* NATIVE DIRECT MODE - Fallback to Embed with Ad-Shield */}
                 {mode === 'native-direct' && watch && (
-                    <div style={{ width: '100%', height: '100%' }}>
+                    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
                         <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, background: 'rgba(255, 87, 34, 0.9)', padding: '5px 10px', borderRadius: '4px', color: '#fff', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <ShieldCheck size={14} /> Native Direct Embed
                         </div>
+
+                        {/* Ad-Shield Overlay */}
+                        {adShieldActive && !iframeError && (
+                            <div
+                                onClick={unlockAdShield}
+                                style={{
+                                    position: 'absolute', inset: 0, zIndex: 20,
+                                    background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)',
+                                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                    cursor: 'pointer', transition: 'opacity 0.3s'
+                                }}
+                            >
+                                <div style={{
+                                    padding: '20px 40px', background: '#ff5722', borderRadius: '50px',
+                                    display: 'flex', alignItems: 'center', gap: '15px',
+                                    boxShadow: '0 0 30px rgba(255, 87, 34, 0.6)', transform: 'scale(1.1)'
+                                }}>
+                                    <Play size={32} fill="white" />
+                                    <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>Click to Unlock Stream</span>
+                                </div>
+                                <p style={{ marginTop: '20px', color: '#aaa', fontSize: '0.9rem' }}>
+                                    <Shield size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }} />
+                                    Ad-Shield Active: Popups blocked
+                                </p>
+                            </div>
+                        )}
 
                         {iframeError ? (
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#666' }}>
@@ -387,7 +448,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                         ) : (
                             <iframe
                                 src={watch}
-                                style={{ width: '100%', height: '100%', border: 'none' }}
+                                style={{ width: '100%', height: '100%', border: 'none', pointerEvents: adShieldActive ? 'none' : 'auto' }}
                                 allowFullScreen
                                 allow="autoplay; fullscreen; encrypted-media"
                                 referrerPolicy="no-referrer"

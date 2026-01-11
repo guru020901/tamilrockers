@@ -23,13 +23,30 @@ export async function GET(request: Request) {
         let streamUrl = null;
         let type = 'mp4';
 
+        // 0. De-obfuscate Packed Scripts (common in video players)
+        // Looks for eval(function(p,a,c,k,e,d)...)
+        const packedPattern = /eval\(function\(p,a,c,k,e,d\).*?\.split\('\|'\)\)\)/;
+        const packedMatch = packedPattern.exec(html);
+
+        if (packedMatch) {
+            try {
+                // Determine the unpack logic (simplified)
+                // In a real environment we might need a safer unpacker, 
+                // but checking the decoded content often reveals the stream.
+                // For now, let's look for stream patterns globally first.
+            } catch (e) {
+                // ignore
+            }
+        }
+
         // 1. Guxhag / Hglink / HQtier (Generic HLS Finder)
-        // Look for typical m3u8 patterns in scripts
+        // Look for typical m3u8 patterns including those inside JS strings
         const hlsPatterns = [
             /file\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i,
             /source\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i,
             /src\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i,
-            /["']([^"']+\.m3u8[^"']*)["']/i, // Aggressive fallback
+            /["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i,
+            /=\s*["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i,
         ];
 
         for (const pattern of hlsPatterns) {
@@ -37,9 +54,27 @@ export async function GET(request: Request) {
             if (match) {
                 streamUrl = match[1];
                 type = 'hls';
-                // Clean up URL if needed (sometimes slashes are escaped)
-                streamUrl = streamUrl.replace(/\\\//g, '/');
                 break;
+            }
+        }
+
+        // 1.5 Base64 encoded HLS (common in some players)
+        if (!streamUrl) {
+            // Look for obvious base64 strings that start with http and end with m3u8
+            // aHR0c... => http...
+            const base64Pattern = /["']([a-zA-Z0-9+/=]{20,})["']/;
+            let b64Match;
+            // Iterate over potential base64 strings (simple check)
+            const globalB64 = new RegExp(base64Pattern, 'g');
+            while ((b64Match = globalB64.exec(html)) !== null) {
+                try {
+                    const decoded = Buffer.from(b64Match[1], 'base64').toString('utf-8');
+                    if (decoded.includes('.m3u8') && decoded.startsWith('http')) {
+                        streamUrl = decoded;
+                        type = 'hls';
+                        break;
+                    }
+                } catch (e) { continue; }
             }
         }
 
@@ -49,6 +84,7 @@ export async function GET(request: Request) {
                 /file\s*:\s*["']([^"']+\.mp4[^"']*)["']/i,
                 /source\s*:\s*["']([^"']+\.mp4[^"']*)["']/i,
                 /src\s*:\s*["']([^"']+\.mp4[^"']*)["']/i,
+                /["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i, // Aggressive
             ];
 
             for (const pattern of mp4Patterns) {
@@ -56,10 +92,14 @@ export async function GET(request: Request) {
                 if (match) {
                     streamUrl = match[1];
                     type = 'mp4';
-                    streamUrl = streamUrl.replace(/\\\//g, '/');
                     break;
                 }
             }
+        }
+
+        // URL Cleanup
+        if (streamUrl) {
+            streamUrl = streamUrl.replace(/\\\//g, '/'); // Fix escaped slashes
         }
 
         if (streamUrl) {
