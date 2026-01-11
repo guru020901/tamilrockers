@@ -53,35 +53,44 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
     // Error state
     const [iframeError, setIframeError] = useState(false);
 
-    // Effect: Try to extract clean stream when watch URL is available
+    // Effect: TURBO DIRECT - Aggressively try to extract clean stream IMMEDIATELY
     useEffect(() => {
         if (watch && (mode === 'native-direct' || mode === 'native-clean')) {
-            const extractStream = async () => {
+            const extractStream = async (attempt = 1) => {
                 if (cleanUrl) return; // Already extracted
 
                 setIsExtracting(true);
+                console.log(`[Turbo Extraction] Attempt ${attempt}/3...`);
+
                 try {
                     const res = await fetch(`/api/extract?url=${encodeURIComponent(watch)}`);
                     const data = await res.json();
 
                     if (data.success && data.streamUrl) {
-                        console.log('[Direct Stream] Extracted:', data.streamUrl);
+                        console.log('[Turbo Extraction] SUCCESS:', data.streamUrl);
                         setCleanUrl(data.streamUrl);
                         setCleanType(data.type);
                         setMode('native-clean');
+                        return; // Success - stop retrying
                     }
                 } catch (e) {
-                    console.error('[Direct Stream] Extraction failed:', e);
-                } finally {
+                    console.error('[Turbo Extraction] Failed:', e);
+                }
+
+                // Retry logic (up to 3 attempts with different strategies)
+                if (attempt < 3) {
+                    setTimeout(() => extractStream(attempt + 1), 1000 * attempt);
+                } else {
+                    console.log('[Turbo Extraction] All attempts failed, staying on Direct mode');
                     setIsExtracting(false);
                 }
             };
 
-            // Short delay to allow UI to settle
-            const timer = setTimeout(extractStream, 500);
-            return () => clearTimeout(timer);
+            // Start IMMEDIATELY - no delay
+            extractStream();
         }
     }, [watch, cleanUrl, mode]);
+
 
     // Auto IMDB lookup based on title
     useEffect(() => {
