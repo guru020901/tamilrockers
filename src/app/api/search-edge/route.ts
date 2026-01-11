@@ -1,12 +1,6 @@
 // Enable Edge Runtime for ultra-fast cold starts
 export const runtime = 'edge';
 
-// Optional: Configure specific regions
-export const config = {
-    runtime: 'edge',
-    regions: ['sin1', 'hnd1', 'iad1'], // Singapore, Tokyo, Virginia (global coverage)
-};
-
 import { NextResponse } from 'next/server';
 import { searchCache, circuitBreaker } from '@/lib/cache';
 import { performanceMonitor, prefetchManager } from '@/lib/advanced';

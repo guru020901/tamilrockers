@@ -55,7 +55,8 @@ export async function GET(request: Request) {
                 if (!seen.has(m.link)) { seen.add(m.link); unique.push(m); }
             }
 
-            const poster = document.querySelector('.nv-post-thumbnail-wrap img')?.src || null;
+            const posterEl = document.querySelector('.nv-post-thumbnail-wrap img') as HTMLImageElement | null;
+            const poster = posterEl?.src || null;
 
             // Extract Watch/Stream URL (CyberVynx etc)
             let watch = null;
