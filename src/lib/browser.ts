@@ -8,12 +8,12 @@ export async function getBrowser() {
     if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_VERSION) {
         // Vercel / Lambda Environment
         browser = await puppeteer.launch({
-            args: chromium.args,
-            defaultViewport: chromium.defaultViewport,
-            executablePath: await chromium.executablePath(),
-            headless: chromium.headless as any, // Cast to any to avoid type mismatch
+            args: (chromium as any).args,
+            defaultViewport: { width: 1280, height: 720 },
+            executablePath: await (chromium as any).executablePath(),
+            headless: (chromium as any).headless,
             ignoreHTTPSErrors: true,
-        });
+        } as any);
     } else {
         // Local Development Environment
         try {
