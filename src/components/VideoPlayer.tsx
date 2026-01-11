@@ -53,6 +53,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
     // Error state
     const [iframeError, setIframeError] = useState(false);
 
+    // Preloader state - warms up iframe in background
+    const [iframePreloaded, setIframePreloaded] = useState(false);
+
     // Effect: TURBO DIRECT - Aggressively try to extract clean stream IMMEDIATELY
     useEffect(() => {
         if (watch && (mode === 'native-direct' || mode === 'native-clean')) {
@@ -92,9 +95,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
     }, [watch, cleanUrl, mode]);
 
 
-    // Auto IMDB lookup based on title
+    // Auto IMDB lookup based on title (Runs for ALL modes now)
     useEffect(() => {
-        if (!imdb && !autoImdb && title && mode === 'cloud') {
+        if (!imdb && !autoImdb && title) {
             setLookingUpImdb(true);
 
             // Extract clean movie name and year
@@ -511,8 +514,26 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                 {/* NATIVE DIRECT MODE - Fallback to Embed with Hardened Sandbox */}
                 {mode === 'native-direct' && watch && (
                     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-                        <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, background: 'rgba(255, 87, 34, 0.9)', padding: '5px 10px', borderRadius: '4px', color: '#fff', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <ShieldCheck size={14} /> Native Direct Embed
+                        <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, display: 'flex', gap: '10px' }}>
+                            <div style={{ background: 'rgba(255, 87, 34, 0.9)', padding: '5px 10px', borderRadius: '4px', color: '#fff', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <ShieldCheck size={14} /> Native Direct Embed
+                            </div>
+
+                            {/* SMART SWITCH: Offer Cloud Server if available */}
+                            {effectiveImdb && (
+                                <button
+                                    onClick={() => setMode('cloud')}
+                                    style={{
+                                        background: 'linear-gradient(90deg, #00C9FF 0%, #92FE9D 100%)',
+                                        border: 'none', padding: '5px 12px', borderRadius: '4px',
+                                        color: '#000', fontSize: '0.8rem', fontWeight: 'bold',
+                                        display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
+                                        animation: 'pulse 2s infinite'
+                                    }}
+                                >
+                                    <Zap size={14} fill="currentColor" /> Switch to Turbo Server
+                                </button>
+                            )}
                         </div>
 
                         {/* Ad-Shield Overlay */}

@@ -66,10 +66,15 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
         fetchDetails();
     }, [id, searchParams]);
 
+    // Dynamic browser tab title
+    useEffect(() => {
+        document.title = movie ? `${movie.title} - TorrentRockers` : 'TorrentRockers - Ultra-Fast Streaming';
+    }, [movie]);
+
     if (loading) {
         return (
             <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000', color: '#fff' }}>
-                <h2>Loading StreamTitan Data...</h2>
+                <h2>Loading TorrentRockers...</h2>
             </div>
         );
     }
