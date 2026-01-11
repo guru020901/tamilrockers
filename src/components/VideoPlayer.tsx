@@ -248,67 +248,87 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
 
     return (
         <div ref={containerRef} style={containerStyle}>
-            {/* Mode Switcher (Auto-hide in Fullscreen) */}
-            <div style={{
-                display: 'flex', background: isFullscreen ? 'rgba(0,0,0,0.8)' : '#111',
-                borderBottom: '1px solid #222', overflowX: 'auto',
-                position: isFullscreen ? 'absolute' : 'static', top: 0, left: 0, right: 0, zIndex: 50,
-                opacity: (isFullscreen && !showControls) ? 0 : 1, transition: 'opacity 0.3s',
-                scrollbarWidth: 'none'
-            }}>
-                {watch && (
+            {/* Mode Switcher (Hidden in Fullscreen) */}
+            {!isFullscreen && (
+                <div style={{
+                    display: 'flex', background: '#111',
+                    borderBottom: '1px solid #222', overflowX: 'auto',
+                    scrollbarWidth: 'none'
+                }}>
+                    {watch && (
+                        <button
+                            onClick={() => { setMode(cleanUrl ? 'native-clean' : 'native-direct'); setIframeError(false); }}
+                            style={{
+                                flex: 1, padding: '14px', background: mode.includes('native') ? '#1a1a1a' : 'transparent',
+                                border: 'none', color: mode.includes('native') ? '#ff5722' : '#666',
+                                cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                                borderBottom: mode.includes('native') ? '2px solid #ff5722' : 'none', minWidth: '120px', whiteSpace: 'nowrap'
+                            }}
+                        >
+                            {isExtracting ? <Loader size={18} className="animate-spin" /> : <Activity size={18} />}
+                            {mode === 'native-clean' ? 'CLEAN' : 'DIRECT'}
+                        </button>
+                    )}
+
                     <button
-                        onClick={() => { setMode(cleanUrl ? 'native-clean' : 'native-direct'); setIframeError(false); }}
+                        onClick={() => setMode('cloud')}
                         style={{
-                            flex: 1, padding: '14px', background: mode.includes('native') ? '#1a1a1a' : 'transparent',
-                            border: 'none', color: mode.includes('native') ? '#ff5722' : '#666',
+                            flex: 1, padding: '14px', background: mode === 'cloud' ? '#1a1a1a' : 'transparent',
+                            border: 'none', color: mode === 'cloud' ? '#00e5ff' : '#666',
                             cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                            borderBottom: mode.includes('native') ? '2px solid #ff5722' : 'none', minWidth: '120px', whiteSpace: 'nowrap'
+                            borderBottom: mode === 'cloud' ? '2px solid #00e5ff' : 'none', minWidth: '100px'
                         }}
                     >
-                        {isExtracting ? <Loader size={18} className="animate-spin" /> : <Activity size={18} />}
-                        {mode === 'native-clean' ? 'CLEAN' : 'DIRECT'}
+                        <Cloud size={18} /> CLOUD
                     </button>
-                )}
-                <button
-                    onClick={() => setMode('cloud')}
-                    style={{
-                        flex: 1, padding: '14px', background: mode === 'cloud' ? '#1a1a1a' : 'transparent',
-                        border: 'none', color: mode === 'cloud' ? '#00e5ff' : '#666',
-                        cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                        borderBottom: mode === 'cloud' ? '2px solid #00e5ff' : 'none', minWidth: '100px'
-                    }}
-                >
-                    <Cloud size={18} /> CLOUD
-                </button>
-                <button
-                    onClick={() => setMode('p2p')}
-                    style={{
-                        flex: 1, padding: '14px', background: mode === 'p2p' ? '#1a1a1a' : 'transparent',
-                        border: 'none', color: mode === 'p2p' ? '#00ff00' : '#666',
-                        cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                        borderBottom: mode === 'p2p' ? '2px solid #00ff00' : 'none', minWidth: '100px'
-                    }}
-                >
-                    <Database size={18} /> P2P
-                </button>
+                    <button
+                        onClick={() => setMode('p2p')}
+                        style={{
+                            flex: 1, padding: '14px', background: mode === 'p2p' ? '#1a1a1a' : 'transparent',
+                            border: 'none', color: mode === 'p2p' ? '#00ff00' : '#666',
+                            cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                            borderBottom: mode === 'p2p' ? '2px solid #00ff00' : 'none', minWidth: '100px'
+                        }}
+                    >
+                        <Database size={18} /> P2P
+                    </button>
 
-                {/* Fullscreen Toggle */}
-                <button
-                    onClick={toggleFullscreenMode}
-                    style={{
-                        padding: '0 20px', background: isFullscreen ? '#4CAF50' : 'transparent',
-                        border: 'none', color: isFullscreen ? '#fff' : '#666',
-                        cursor: 'pointer', fontWeight: 'bold', borderLeft: '1px solid #222'
-                    }}
-                    title="Toggle Fullscreen"
-                >
-                    {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
-                </button>
-            </div>
+                    {/* Fullscreen Toggle (Standard) */}
+                    <button
+                        onClick={toggleFullscreenMode}
+                        style={{
+                            padding: '0 20px', background: 'transparent',
+                            border: 'none', color: '#666',
+                            cursor: 'pointer', fontWeight: 'bold', borderLeft: '1px solid #222'
+                        }}
+                        title="Toggle Fullscreen"
+                    >
+                        <Maximize size={18} />
+                    </button>
+                </div>
+            )}
+
+            {/* Minimal Fullscreen Overlay Controls */}
+            {isFullscreen && (
+                <div style={{
+                    position: 'absolute', top: 20, right: 20, zIndex: 100,
+                    opacity: showControls ? 1 : 0, transition: 'opacity 0.3s'
+                }}>
+                    <button
+                        onClick={toggleFullscreenMode}
+                        style={{
+                            background: 'rgba(0,0,0,0.6)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)',
+                            borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            cursor: 'pointer', backdropFilter: 'blur(4px)'
+                        }}
+                    >
+                        <Minimize size={20} />
+                    </button>
+                </div>
+            )}
 
             {/* Cloud Server Selector */}
-            {mode === 'cloud' && (
+            {mode === 'cloud' && !isFullscreen && (
                 <div style={{ display: 'flex', gap: '8px', padding: '10px 15px', background: '#050505', borderBottom: '1px solid #222', flexWrap: 'wrap' }}>
                     {SERVERS.map((server, idx) => (
                         <button
