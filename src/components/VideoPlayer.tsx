@@ -439,6 +439,17 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                                 onPause={onPause}
                                 onWaiting={onWaiting}
                                 onPlaying={onPlaying}
+                                hlsConfig={{
+                                    autoStartLoad: true,
+                                    startLevel: -1, // Auto-detect best starting quality
+                                    capLevelToPlayerSize: true, // Don't waste bandwidth on hidden pixels
+                                    enableWorker: true, // Multithreaded processing
+                                    maxBufferLength: 30, // 30s forward buffer for smoothness
+                                    maxMaxBufferLength: 600, // Allow buffering up to 10 mins if memory permits
+                                    maxBufferHole: 0.5,
+                                    lowLatencyMode: true,
+                                    backBufferLength: 90 // Keep 90s backward buffer for seeking
+                                }}
                             />
                         ) : (
                             <video
@@ -446,6 +457,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                                 src={cleanUrl}
                                 controls={showControls}
                                 autoPlay
+                                preload="auto" // Aggressive preloading
+                                playsInline
                                 style={{ width: '100%', height: '100%', background: '#000', outline: 'none' }}
                                 onPlay={onPlay}
                                 onPause={onPause}
