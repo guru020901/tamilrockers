@@ -90,14 +90,14 @@ export async function GET(request: Request) {
         }
 
         // 2. Generic MP4 Finder (if HLS not found)
-        if (!streamUrl) {
-            const mp4Patterns = [
-                /file\s*:\s*["']([^"']+\.mp4[^"']*)["']/i,
-                /source\s*:\s*["']([^"']+\.mp4[^"']*)["']/i,
-                /src\s*:\s*["']([^"']+\.mp4[^"']*)["']/i,
-                /["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i, // Aggressive
-            ];
+        const mp4Patterns = [
+            /file\s*:\s*["']([^"']+\.mp4[^"']*)["']/i,
+            /source\s*:\s*["']([^"']+\.mp4[^"']*)["']/i,
+            /src\s*:\s*["']([^"']+\.mp4[^"']*)["']/i,
+            /["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i, // Aggressive
+        ];
 
+        if (!streamUrl) {
             for (const pattern of mp4Patterns) {
                 const match = pattern.exec(html);
                 if (match) {
@@ -105,6 +105,58 @@ export async function GET(request: Request) {
                     type = 'mp4';
                     break;
                 }
+            }
+        }
+
+        // 3. ⛏️ DEEP MINING: Recursive Iframe Extraction
+        // If we haven't found a direct stream, check if there's a nested iframe/embed that holds the treasure.
+        if (!streamUrl) {
+            const iframePatterns = [
+                /<iframe[^>]+src=["'](https?:\/\/[^"']+)["']/i,
+                /<embed[^>]+src=["'](https?:\/\/[^"']+)["']/i,
+            ];
+
+            for (const pattern of iframePatterns) {
+                const match = pattern.exec(html);
+                if (match) {
+                    const iframeUrl = match[1];
+                    console.log(`[API/Extract] Deep Mining: Following iframe to ${iframeUrl}`);
+
+                    try {
+                        const iframeHtml = await fetchHtmlWithBypass(iframeUrl, new URL(iframeUrl).origin);
+
+                        // Repeat search on iframe content
+                        // (Re-using the same regex patterns)
+                        const deepHlsMatch = hlsPatterns.find(p => p.test(iframeHtml))?.exec(iframeHtml);
+                        if (deepHlsMatch) {
+                            streamUrl = deepHlsMatch[1];
+                            type = 'hls';
+                            break;
+                        }
+
+                        const deepMp4Match = mp4Patterns.find(p => p.test(iframeHtml))?.exec(iframeHtml);
+                        if (deepMp4Match) {
+                            streamUrl = deepMp4Match[1];
+                            type = 'mp4';
+                            break;
+                        }
+
+                        // Check for Packed/Base64 in iframe
+                        // ... (Simplified for brevity, assuming main patterns cover most)
+
+                        // Check specifically for packed in iframe
+                        const deepPackedMatch = packedPattern.exec(iframeHtml);
+                        if (deepPackedMatch) {
+                            // If we found a packed script in the iframe, it's highly likely the stream is there.
+                            // For now, we can't easily unpack in this pass without code duplication or a helper function.
+                            // But often the simple regex finds the m3u8 inside the packed string anyway.
+                        }
+
+                    } catch (deepErr) {
+                        console.warn(`[API/Extract] Deep Mining failed for ${iframeUrl}`);
+                    }
+                }
+                if (streamUrl) break; // Break from iframe loop if stream found
             }
         }
 
