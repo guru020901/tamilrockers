@@ -304,7 +304,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch }) => {
                             <ShieldCheck size={14} /> Native Ad-Free (Proxy)
                         </div>
                         <iframe
-                            src={`http://localhost:3006/proxy?url=${encodeURIComponent(watch)}`}
+                            src={`/api/proxy?url=${encodeURIComponent(watch)}`}
                             style={{ width: '100%', height: '100%', border: 'none' }}
                             allowFullScreen
                             allow="autoplay; encrypted-media"

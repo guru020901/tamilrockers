@@ -37,8 +37,8 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                         if (url.includes('1tamilblasters') || url.includes('tamilblasters')) {
                             apiUrl = `/api/tamilblasters/details?url=${encodeURIComponent(url)}`;
                         } else {
-                            // Default to 1TamilMV (Legacy direct port call - should be proxied ideally)
-                            apiUrl = `http://localhost:3007/api/details?url=${encodeURIComponent(url)}`;
+                            // Default to 1TamilMV (Serverless Route)
+                            apiUrl = `/api/tamilmv/details?url=${encodeURIComponent(url)}`;
                         }
 
                         console.log(`Fetching details from: ${apiUrl}`);

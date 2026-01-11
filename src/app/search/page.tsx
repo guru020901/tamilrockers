@@ -42,92 +42,61 @@ export default function SearchPage() {
         setResults([]);
         setBlockedSources([]);
 
-        try {
-            // Define fetchers - USE DOMAINS FROM STATE
-            // 1. Search 1TamilMV (via internal proxy)
-            const fetch1TamilMV = async () => {
-                try {
-                    const d = encodeURIComponent(domains['1tamilmv']);
-                    const res = await fetch(`/api/tamilmv?q=${encodeURIComponent(query)}&domain=${d}`);
-                    const data = await res.json();
-                    if (data.results) {
-                        setResults(prev => {
-                            const existing = new Set(prev.map(p => p.link));
-                            const newItems = data.results.filter((i: any) => !existing.has(i.link)).map((r: any) => ({ ...r, source: '1tamilmv' }));
-                            return [...prev, ...newItems];
-                        });
-                    }
-                } catch (e) {
-                    console.error('1TamilMV Error:', e);
-                    setBlockedSources(prev => [...prev, '1TamilMV']);
+        // Helper to fetch and append results
+        const fetchSource = async (url: string, sourceName: string) => {
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+
+                // Check if blocked
+                if (data.status && Object.values(data.status).includes('blocked')) {
+                    setBlockedSources(prev => [...prev, sourceName]);
                 }
-            };
 
-            // 1.5. Search 1TamilBlasters (via internal proxy)
-            const fetch1TamilBlasters = async () => {
-                try {
-                    const res = await fetch(`/api/tamilblasters?q=${encodeURIComponent(query)}`);
-                    const data = await res.json();
-                    if (data.results) {
-                        setResults(prev => {
-                            const existing = new Set(prev.map(p => p.link));
-                            const newItems = data.results.filter((i: any) => !existing.has(i.link)); // Source already set in backend
-                            return [...prev, ...newItems];
-                        });
-                    }
-                } catch (e) {
-                    console.error('1TamilBlasters Error:', e);
-                    setBlockedSources(prev => [...prev, '1TamilBlasters']);
+                if (data.results && data.results.length > 0) {
+                    setResults(prev => {
+                        const existing = new Set(prev.map(p => p.link));
+                        const newItems = data.results.filter((i: any) => !existing.has(i.link)).map((r: any) => ({ ...r, source: r.source || sourceName }));
+                        return [...prev, ...newItems]; // Stream in results
+                    });
                 }
-            };
-
-            // 2. Search Multi-Source (TPB/1337x/RuTracker) via internal proxy
-            const fetchMultiSearch = async (srcParam: string) => {
-                // Streaming results directly to state
-                try {
-                    const tpb = encodeURIComponent(domains['tpb']);
-                    const x1337 = encodeURIComponent(domains['1337x']);
-                    const ru = encodeURIComponent(domains['rutracker']);
-
-                    // Using internal API route which proxies to port 3008
-                    const res = await fetch(`/api/torrents?q=${encodeURIComponent(query)}&source=${srcParam}&tpbDomain=${tpb}&x1337Domain=${x1337}&ruDomain=${ru}`);
-                    const data = await res.json();
-
-                    // Handle blocked status
-                    if (data.status) {
-                        if (data.status['1337x'] === 'blocked') setBlockedSources(prev => [...prev, '1337x']);
-                    }
-
-                    if (data.results) {
-                        setResults(prev => {
-                            const existing = new Set(prev.map(p => p.link));
-                            const newItems = data.results.filter((i: any) => !existing.has(i.link));
-                            return [...prev, ...newItems];
-                        });
-                    }
-                } catch (e) {
-                    console.error('Torrent API Error:', e);
-                } finally {
-                    // Done with multi-search
-                }
-            };
-
-            // Execution Logic - results stream directly to state
-            if (source === 'all') {
-                await Promise.all([
-                    fetch1TamilMV(),
-                    fetch1TamilBlasters(),
-                    fetchMultiSearch('all')
-                ]);
-            } else if (source === '1tamilmv') {
-                await fetch1TamilMV();
-            } else if (source === '1tamilblasters') {
-                await fetch1TamilBlasters();
-            } else {
-                await fetchMultiSearch(source);
+            } catch (err) {
+                console.error(`${sourceName} Search Error:`, err);
+                // Don't set global error, just log it. Partial results are better than none.
             }
-        } catch (err) {
-            setError('Search service error. Check console.');
+        };
+
+        const promises = [];
+        const tpbParam = encodeURIComponent(domains['tpb']);
+        const x1337Param = encodeURIComponent(domains['1337x']);
+        const ruParam = encodeURIComponent(domains['rutracker']);
+        const mvParam = encodeURIComponent(domains['1tamilmv']);
+        const q = encodeURIComponent(query);
+
+        if (source === 'all') {
+            // FIRE EVERYTHING (Distributed Parallel Execution)
+            promises.push(fetchSource(`/api/tamilmv?q=${q}&domain=${mvParam}`, '1tamilmv'));
+            promises.push(fetchSource(`/api/tamilblasters?q=${q}`, '1tamilblasters'));
+
+            // Split torrent sources to avoid monolithic timeout
+            promises.push(fetchSource(`/api/torrents?q=${q}&source=tpb&tpbDomain=${tpbParam}`, 'tpb'));
+            promises.push(fetchSource(`/api/torrents?q=${q}&source=1337x&x1337Domain=${x1337Param}`, '1337x'));
+            promises.push(fetchSource(`/api/torrents?q=${q}&source=rutracker&ruDomain=${ruParam}`, 'rutracker'));
+
+        } else if (source === '1tamilmv') {
+            promises.push(fetchSource(`/api/tamilmv?q=${q}&domain=${mvParam}`, '1tamilmv'));
+        } else if (source === '1tamilblasters') {
+            promises.push(fetchSource(`/api/tamilblasters?q=${q}`, '1tamilblasters'));
+        } else if (source === 'tpb') {
+            promises.push(fetchSource(`/api/torrents?q=${q}&source=tpb&tpbDomain=${tpbParam}`, 'tpb'));
+        } else if (source === '1337x') {
+            promises.push(fetchSource(`/api/torrents?q=${q}&source=1337x&x1337Domain=${x1337Param}`, '1337x'));
+        } else if (source === 'rutracker') {
+            promises.push(fetchSource(`/api/torrents?q=${q}&source=rutracker&ruDomain=${ruParam}`, 'rutracker'));
+        }
+
+        try {
+            await Promise.allSettled(promises);
         } finally {
             setLoading(false);
         }
