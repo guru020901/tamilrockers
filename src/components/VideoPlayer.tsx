@@ -432,7 +432,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                         {cleanType === 'hls' ? (
                             <ReactHlsPlayer
                                 playerRef={playerRef as any}
-                                src={cleanUrl}
+                                src={`/api/relay?url=${encodeURIComponent(cleanUrl)}&referer=${encodeURIComponent(watch || '')}`}
                                 autoPlay
                                 controls={showControls}
                                 width="100%"
@@ -443,24 +443,40 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                                 onWaiting={onWaiting}
                                 onPlaying={onPlaying}
                                 hlsConfig={{
+                                    // 🚀 ULTRA-FAST STREAMING CONFIG
                                     autoStartLoad: true,
                                     startLevel: -1, // Auto-detect best starting quality
-                                    capLevelToPlayerSize: true, // Don't waste bandwidth on hidden pixels
-                                    enableWorker: true, // Multithreaded processing
-                                    maxBufferLength: 30, // 30s forward buffer for smoothness
-                                    maxMaxBufferLength: 600, // Allow buffering up to 10 mins if memory permits
+                                    capLevelToPlayerSize: true,
+                                    enableWorker: true, // Multithreaded decoding
+                                    lowLatencyMode: false, // Prioritize buffer over latency
+
+                                    // AGGRESSIVE BUFFERING (Prevents stalling)
+                                    maxBufferLength: 60, // 60s forward buffer
+                                    maxMaxBufferLength: 1200, // Up to 20 mins buffered
                                     maxBufferHole: 0.5,
-                                    lowLatencyMode: true,
-                                    backBufferLength: 90 // Keep 90s backward buffer for seeking
+                                    backBufferLength: 180, // 3 mins backward buffer
+
+                                    // FAST STARTUP
+                                    manifestLoadingTimeOut: 10000,
+                                    manifestLoadingMaxRetry: 4,
+                                    levelLoadingTimeOut: 10000,
+                                    fragLoadingTimeOut: 20000,
+                                    fragLoadingMaxRetry: 6,
+
+                                    // ABR OPTIMIZATION
+                                    abrEwmaFastLive: 3,
+                                    abrEwmaSlowLive: 9,
+                                    abrBandWidthFactor: 0.95,
+                                    abrBandWidthUpFactor: 0.7,
                                 }}
                             />
                         ) : (
                             <video
                                 ref={playerRef}
-                                src={cleanUrl}
+                                src={`/api/relay?url=${encodeURIComponent(cleanUrl)}&referer=${encodeURIComponent(watch || '')}`}
                                 controls={showControls}
                                 autoPlay
-                                preload="auto" // Aggressive preloading
+                                preload="auto"
                                 playsInline
                                 style={{ width: '100%', height: '100%', background: '#000', outline: 'none' }}
                                 onPlay={onPlay}
