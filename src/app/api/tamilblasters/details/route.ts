@@ -1,93 +1,110 @@
 import { NextResponse } from 'next/server';
-import { getBrowser } from '@/lib/browser';
+
+/**
+ * PUPPETEER-FREE 1TamilBlasters Details Scraper
+ * Uses fetch + regex parsing (works on Vercel serverless!)
+ */
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
-    const url = searchParams.get('url');
+    const targetUrl = searchParams.get('url');
 
-    if (!url) {
-        return NextResponse.json({ error: 'URL required' }, { status: 400 });
+    if (!targetUrl) {
+        return NextResponse.json({ error: 'URL parameter required' }, { status: 400 });
     }
 
-    console.log(`[API/TamilBlasters/Details] Fetching: "${url}"`);
-    let browser = null;
-    let page = null;
+    console.log(`[API/TamilBlasters/Details] Fetching: ${targetUrl}`);
 
     try {
-        browser = await getBrowser();
-        page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        const response = await fetch(targetUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+            },
+            signal: AbortSignal.timeout(15000),
+        });
 
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
 
-        const data = await page.evaluate(() => {
-            const magnets: any[] = [];
+        const html = await response.text();
 
-            // 1. Explicit Magnet Links (broad selector)
-            document.querySelectorAll('a[href^="magnet:"]').forEach((l: any) => {
-                magnets.push({ link: l.href, title: l.innerText.trim() || 'Magnet Link', size: 'Unknown' });
+        // Extract magnet links using regex
+        const magnets: any[] = [];
+        const magnetPattern = /magnet:\?xt=urn:btih:[a-zA-Z0-9]+[^"'\s<>)]*/gi;
+
+        let match;
+        while ((match = magnetPattern.exec(html)) !== null) {
+            const magnet = match[0];
+            // Try to extract title from magnet
+            const dnMatch = magnet.match(/dn=([^&]+)/);
+            const title = dnMatch ? decodeURIComponent(dnMatch[1].replace(/\+/g, ' ')) : 'Unknown';
+
+            magnets.push({
+                link: magnet,
+                title,
             });
+        }
 
-            // 2. .torrent files
-            document.querySelectorAll('a[href$=".torrent"]').forEach((l: any) => {
-                magnets.push({ link: l.href, title: 'Torrent File', size: 'Unknown', isTorrentFile: true });
-            });
+        // Deduplicate magnets
+        const seen = new Set();
+        const uniqueMagnets = magnets.filter(m => {
+            if (seen.has(m.link)) return false;
+            seen.add(m.link);
+            return true;
+        });
 
-            // 3. Text Magnets (in code blocks or plain text)
-            if (magnets.length === 0) {
-                const html = document.body.innerHTML;
-                const text = document.body.innerText;
+        // Extract poster image
+        let poster = null;
+        const posterPatterns = [
+            /<img[^>]*class="[^"]*attachment-post-thumbnail[^"]*"[^>]*src="([^"]+)"/i,
+            /<img[^>]*src="([^"]+)"[^>]*class="[^"]*wp-post-image[^"]*"/i,
+            /<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i,
+            /<img[^>]*src="(https?:\/\/[^"]+(?:poster|cover|thumb)[^"]+)"/i,
+        ];
 
-                // Regex for magnet links
-                const magnetRegex = /magnet:\?xt=urn:btih:[a-zA-Z0-9]{32,40}[a-zA-Z0-9=&%\-._]*/g;
-
-                const htmlMatches = html.match(magnetRegex) || [];
-                const textMatches = text.match(magnetRegex) || [];
-                const allMatches = [...new Set([...htmlMatches, ...textMatches])];
-
-                allMatches.forEach(m => magnets.push({ link: m, title: 'Text Magnet', size: 'Unknown' }));
+        for (const pattern of posterPatterns) {
+            const posterMatch = pattern.exec(html);
+            if (posterMatch) {
+                poster = posterMatch[1];
+                break;
             }
+        }
 
-            // Dedupe
-            const unique: any[] = [];
-            const seen = new Set();
-            for (const m of magnets) {
-                if (!seen.has(m.link)) { seen.add(m.link); unique.push(m); }
-            }
+        // Extract embedded video/iframe URL (for native player)
+        let watch = null;
+        const iframePatterns = [
+            /<iframe[^>]*src="([^"]+(?:cybervynx|dood|streamtape|embed|player)[^"]+)"/i,
+            /<iframe[^>]*src="(https?:\/\/[^"]+)"/i,
+        ];
 
-            const posterEl = document.querySelector('.nv-post-thumbnail-wrap img') as HTMLImageElement | null;
-            const poster = posterEl?.src || null;
-
-            // Extract Watch/Stream URL (CyberVynx etc)
-            let watch = null;
-            // 1. Look for iframes
-            const iframes = Array.from(document.querySelectorAll('iframe'));
-            for (const iframe of iframes) {
-                const src = iframe.src;
-                if (src && (src.includes('cybervynx') || src.includes('youtube') || src.includes('dood') || src.includes('tape') || src.includes('embed'))) {
+        for (const pattern of iframePatterns) {
+            const iframeMatch = pattern.exec(html);
+            if (iframeMatch) {
+                const src = iframeMatch[1];
+                // Skip ads and non-video iframes
+                if (!src.includes('googlead') && !src.includes('facebook') && !src.includes('twitter')) {
                     watch = src;
                     break;
                 }
             }
-            // 2. Fallback to first iframe if valid
-            if (!watch && iframes.length > 0 && iframes[0].src && iframes[0].src.startsWith('http')) {
-                watch = iframes[0].src;
-            }
+        }
 
-            return {
-                magnets: unique,
+        console.log(`[API/TamilBlasters/Details] Found ${uniqueMagnets.length} magnets, poster: ${!!poster}, watch: ${!!watch}`);
+
+        return NextResponse.json({
+            success: true,
+            data: {
+                magnets: uniqueMagnets,
                 poster,
-                watch // extracted stream url
-            };
+                watch,
+            }
         });
-
-        return NextResponse.json({ success: true, data });
 
     } catch (err: any) {
         console.error('[API/TamilBlasters/Details] Error:', err.message);
         return NextResponse.json({ error: err.message }, { status: 500 });
-    } finally {
-        if (page) await page.close();
-        if (browser) await browser.close();
     }
 }

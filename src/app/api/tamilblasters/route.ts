@@ -1,132 +1,125 @@
 import { NextResponse } from 'next/server';
-import { getBrowser } from '@/lib/browser';
 import { searchCache, circuitBreaker } from '@/lib/cache';
 import { performanceMonitor, prefetchManager } from '@/lib/advanced';
+
+/**
+ * PUPPETEER-FREE 1TamilBlasters Scraper
+ * Uses fetch + regex parsing (works on Vercel serverless!)
+ */
 
 const DOMAIN = 'https://www.1tamilblasters.business';
 
 export async function GET(request: Request) {
+    const startTime = Date.now();
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q');
 
     if (!query) {
-        return NextResponse.json({ error: 'Query required' }, { status: 400 });
+        return NextResponse.json({ error: 'Query parameter "q" is required' }, { status: 400 });
     }
 
-    // Cache key
     const cacheKey = `tamilblasters:${query}`;
-
-    // Check cache first
     const cached = searchCache.get(cacheKey);
     if (cached) {
-        return NextResponse.json({ results: cached, cached: true });
+        performanceMonitor.track('tamilblasters-cached', startTime);
+        return NextResponse.json({ success: true, results: cached, cached: true });
     }
 
-    // Circuit breaker check
     if (!circuitBreaker.canAttempt('tamilblasters')) {
         return NextResponse.json({ error: 'Service temporarily unavailable', results: [] }, { status: 503 });
     }
 
-    const startTime = Date.now();
     prefetchManager.trackQuery(query);
-
     console.log(`[API/TamilBlasters] Searching for: "${query}"`);
-    let browser: any = null;
-    let page: any = null;
-    let results: any[] = [];
 
     try {
-        browser = await getBrowser();
-        page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-
+        // Fetch the search page using simple HTTP request
         const searchUrl = `${DOMAIN}/?s=${encodeURIComponent(query)}`;
-        console.log(`[API/TamilBlasters] Goto: ${searchUrl}`);
 
-        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-
-        results = await page.evaluate(() => {
-            const items = document.querySelectorAll('article.post');
-            return Array.from(items).map(item => {
-                const titleEl = item.querySelector('.blog-entry-title a') as HTMLAnchorElement;
-                const imgEl = item.querySelector('.nv-post-thumbnail-wrap img') as HTMLImageElement;
-
-                if (!titleEl) return null;
-
-                return {
-                    title: titleEl.innerText.trim(),
-                    link: titleEl.href,
-                    id: titleEl.href.split('/').filter(Boolean).pop(), // simplified ID
-                    poster: imgEl ? imgEl.src : null,
-                    date: 'Unknown',
-                    source: '1tamilblasters'
-                };
-            }).filter(Boolean);
+        const response = await fetch(searchUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Referer': DOMAIN,
+            },
+            signal: AbortSignal.timeout(15000), // 15s timeout
         });
 
-        console.log(`[API/TamilBlasters] Found ${results.length} results. Fetching magnets...`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
 
-        // Fetch magnets for top results (Limit to 3 on Serverless to avoid timeout)
-        // Vercel Hobby Limit is 10s. This is TIGHT.
-        const enriched = await Promise.all(results.slice(0, 3).map(async (item: any) => {
-            let detailPage = null;
-            try {
-                detailPage = await browser.newPage();
-                await detailPage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-                await detailPage.goto(item.link, { waitUntil: 'domcontentloaded', timeout: 15000 }); // FAST timeout
+        const html = await response.text();
 
-                const magnetData = await detailPage.evaluate(() => {
-                    const magnets: any[] = [];
+        // Parse results using regex (no Puppeteer needed!)
+        const results: any[] = [];
 
-                    // 1. Explicit Magnet Links (broad selector)
-                    document.querySelectorAll('a[href^="magnet:"]').forEach((l: any) => {
-                        magnets.push({ link: l.href, title: l.innerText.trim() || 'Magnet Link', size: 'Unknown' });
-                    });
+        // Pattern for article/post items on WordPress-based site
+        const articlePattern = /<article[^>]*>([\s\S]*?)<\/article>/gi;
+        const titleLinkPattern = /<a[^>]*href="([^"]+)"[^>]*rel="bookmark"[^>]*>([\s\S]*?)<\/a>/i;
+        const altTitlePattern = /<h\d[^>]*class="[^"]*entry-title[^"]*"[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i;
+        const thumbnailPattern = /<img[^>]*src="([^"]+)"[^>]*>/i;
 
-                    // 2. .torrent files
-                    document.querySelectorAll('a[href$=".torrent"]').forEach((l: any) => {
-                        magnets.push({ link: l.href, title: 'Torrent File', size: 'Unknown', isTorrentFile: true });
-                    });
+        let match;
+        while ((match = articlePattern.exec(html)) !== null) {
+            const articleHtml = match[1];
 
-                    // 3. Text Magnets (in code blocks or plain text)
-                    if (magnets.length === 0) {
-                        const html = document.body.innerHTML;
-                        const text = document.body.innerText;
-
-                        // Regex for magnet links
-                        const magnetRegex = /magnet:\?xt=urn:btih:[a-zA-Z0-9]{32,40}[a-zA-Z0-9=&%\-._]*/g;
-
-                        const htmlMatches = html.match(magnetRegex) || [];
-                        const textMatches = text.match(magnetRegex) || [];
-                        const allMatches = [...new Set([...htmlMatches, ...textMatches])];
-
-                        allMatches.forEach(m => magnets.push({ link: m, title: 'Text Magnet', size: 'Unknown' }));
-                    }
-
-                    // Dedupe
-                    const unique: any[] = [];
-                    const seen = new Set();
-                    for (const m of magnets) {
-                        if (!seen.has(m.link)) { seen.add(m.link); unique.push(m); }
-                    }
-                    return unique;
-                });
-
-                return {
-                    ...item,
-                    magnet: magnetData[0]?.link || null,
-                    magnets: magnetData
-                };
-            } catch (e: any) {
-                console.error(`[API/TamilBlasters] Error details for ${item.link}:`, e.message);
-                return { ...item, magnet: null, magnets: [] };
-            } finally {
-                if (detailPage) await detailPage.close();
+            let titleMatch = titleLinkPattern.exec(articleHtml);
+            if (!titleMatch) {
+                titleMatch = altTitlePattern.exec(articleHtml);
             }
-        }));
 
-        // Merge enriched back
-        results = [...enriched, ...results.slice(3)];
+            const thumbMatch = thumbnailPattern.exec(articleHtml);
+
+            if (titleMatch) {
+                const link = titleMatch[1].replace(/&amp;/g, '&');
+                const title = titleMatch[2].replace(/<[^>]+>/g, '').trim();
+                const thumbnail = thumbMatch ? thumbMatch[1] : null;
+
+                // Skip if no title or too short
+                if (!title || title.length < 3) continue;
+
+                // Extract ID from URL (post ID or slug)
+                const idMatch = link.match(/\/(\d+)\/?$/) || link.match(/\/([^\/]+)\/?$/);
+                const id = idMatch ? idMatch[1] : `tb-${results.length}`;
+
+                results.push({
+                    id,
+                    title: title.replace(/Download|Tamil|Review|Online/gi, '').trim(),
+                    link,
+                    thumbnail,
+                    source: '1tamilblasters',
+                });
+            }
+        }
+
+        // Alternative: Look for direct post links if article pattern fails
+        if (results.length === 0) {
+            const postLinkPattern = /<a[^>]*href="(https?:\/\/[^"]*1tamilblasters[^"]*\/[^"]*)"[^>]*>([^<]{10,})<\/a>/gi;
+            const seen = new Set();
+
+            while ((match = postLinkPattern.exec(html)) !== null) {
+                const link = match[1].replace(/&amp;/g, '&');
+                const title = match[2].trim();
+
+                // Skip duplicates and non-content links
+                if (seen.has(link) || link.includes('/category/') || link.includes('/tag/')) continue;
+                seen.add(link);
+
+                if (title.length > 10) {
+                    const idMatch = link.match(/\/(\d+)\/?$/) || link.match(/\/([^\/]+)\/?$/);
+                    const id = idMatch ? idMatch[1] : `tb-${results.length}`;
+
+                    results.push({
+                        id,
+                        title: title.replace(/Download|Tamil|Review|Online/gi, '').trim(),
+                        link,
+                        source: '1tamilblasters',
+                    });
+                }
+            }
+        }
 
         // Cache successful results
         if (results.length > 0) {
@@ -135,15 +128,13 @@ export async function GET(request: Request) {
             performanceMonitor.track('tamilblasters-search', startTime);
         }
 
+        console.log(`[API/TamilBlasters] Found ${results.length} results`);
+        return NextResponse.json({ success: true, results });
+
     } catch (err: any) {
         console.error('[API/TamilBlasters] Error:', err.message);
         circuitBreaker.recordFailure('tamilblasters');
         performanceMonitor.track('tamilblasters-error', startTime);
-        return NextResponse.json({ error: err.message }, { status: 500 });
-    } finally {
-        if (page) await page.close();
-        if (browser) await browser.close();
+        return NextResponse.json({ error: err.message, results: [] }, { status: 500 });
     }
-
-    return NextResponse.json({ success: true, results });
 }
