@@ -4,6 +4,8 @@ import React, { useRef, useState, useEffect } from 'react';
 import ReactHlsPlayer from 'react-hls-player';
 import { Play, Pause, Activity, Loader, Cloud, Database, Wifi, Shield, ShieldCheck, ExternalLink, Zap, Server, AlertCircle, Maximize, Minimize, Settings } from 'lucide-react';
 
+import { BraveShield } from './BraveShield';
+
 interface VideoPlayerProps {
     magnets: string[];
     imdb?: string;
@@ -248,6 +250,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
 
     return (
         <div ref={containerRef} style={containerStyle}>
+            <BraveShield />
             {/* Mode Switcher (Hidden in Fullscreen) */}
             {!isFullscreen && (
                 <div style={{
