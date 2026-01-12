@@ -6,11 +6,20 @@ import { Play, Pause, Activity, Loader, Cloud, Database, Wifi, Shield, ShieldChe
 
 import { BraveShield } from './BraveShield';
 
+// Episode interface for series content
+interface Episode {
+    number: string;
+    title: string;
+    videoPreview?: string;
+    torrents: { quality: string; size: string; link: string; filename: string }[];
+}
+
 interface VideoPlayerProps {
     magnets: string[];
     imdb?: string;
     watch?: string;
-    title?: string; // For auto IMDB lookup
+    title?: string;
+    episodes?: Episode[]; // NEW: For series with multiple episodes
 }
 
 const SERVERS = [
@@ -21,11 +30,18 @@ const SERVERS = [
     { name: 'Vortex API', url: 'https://moviesapi.club/movie/' }
 ];
 
-const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }) => {
+const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, episodes }) => {
+    // Episode state for series content
+    const [selectedEpisodeIndex, setSelectedEpisodeIndex] = useState(0);
+    const currentEpisode = episodes && episodes.length > 0 ? episodes[selectedEpisodeIndex] : null;
+
+    // Effective watch URL (either from episode or direct prop)
+    const effectiveWatch = currentEpisode?.videoPreview || watch;
+
     // Default mode selection based on available data
     const getDefaultMode = () => {
         if (imdb) return 'cloud';
-        if (watch) return 'native-direct'; // Start with direct, upgrade to clean if possible
+        if (effectiveWatch) return 'native-direct';
         if (magnets && magnets.length > 0) return 'p2p';
         return 'cloud';
     };
@@ -56,9 +72,16 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
     // Preloader state - warms up iframe in background
     const [iframePreloaded, setIframePreloaded] = useState(false);
 
+    // Reset clean URL when episode changes
+    useEffect(() => {
+        setCleanUrl('');
+        setCleanType('');
+        setIframeError(false);
+    }, [selectedEpisodeIndex]);
+
     // Effect: TURBO DIRECT - Aggressively try to extract clean stream IMMEDIATELY
     useEffect(() => {
-        if (watch && (mode === 'native-direct' || mode === 'native-clean')) {
+        if (effectiveWatch && (mode === 'native-direct' || mode === 'native-clean')) {
             const extractStream = async (attempt = 1) => {
                 if (cleanUrl) return; // Already extracted
 
@@ -66,7 +89,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                 console.log(`[Turbo Extraction] Attempt ${attempt}/3...`);
 
                 try {
-                    const res = await fetch(`/api/extract?url=${encodeURIComponent(watch)}`);
+                    const res = await fetch(`/api/extract?url=${encodeURIComponent(effectiveWatch)}`);
                     const data = await res.json();
 
                     if (data.success && data.streamUrl) {
@@ -319,6 +342,62 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title }
                         title="Toggle Fullscreen"
                     >
                         <Maximize size={18} />
+                    </button>
+                </div>
+            )}
+
+            {/* Episode Selector (for series content) */}
+            {episodes && episodes.length > 1 && !isFullscreen && (
+                <div style={{ 
+                    display: 'flex', alignItems: 'center', gap: '10px', 
+                    padding: '12px 15px', background: '#0d0d1a', 
+                    borderBottom: '1px solid #2a2a4a'
+                }}>
+                    <span style={{ color: '#888', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                        📺 Episode:
+                    </span>
+                    <select
+                        value={selectedEpisodeIndex}
+                        onChange={(e) => setSelectedEpisodeIndex(Number(e.target.value))}
+                        style={{
+                            flex: 1, maxWidth: '300px',
+                            background: '#1a1a2e', color: '#fff', 
+                            border: '1px solid #7c3aed', borderRadius: '8px',
+                            padding: '10px 15px', fontSize: '0.9rem', fontWeight: 'bold',
+                            cursor: 'pointer', outline: 'none'
+                        }}
+                    >
+                        {episodes.map((ep, idx) => (
+                            <option key={idx} value={idx}>
+                                Episode {ep.number} {ep.title !== `Episode ${ep.number}` ? `- ${ep.title}` : ''}
+                            </option>
+                        ))}
+                    </select>
+                    
+                    {/* Quick Nav Buttons */}
+                    <button
+                        onClick={() => setSelectedEpisodeIndex(Math.max(0, selectedEpisodeIndex - 1))}
+                        disabled={selectedEpisodeIndex === 0}
+                        style={{
+                            background: selectedEpisodeIndex === 0 ? '#333' : '#7c3aed', 
+                            color: '#fff', border: 'none', borderRadius: '6px',
+                            padding: '8px 12px', cursor: selectedEpisodeIndex === 0 ? 'not-allowed' : 'pointer',
+                            fontWeight: 'bold'
+                        }}
+                    >
+                        ← Prev
+                    </button>
+                    <button
+                        onClick={() => setSelectedEpisodeIndex(Math.min(episodes.length - 1, selectedEpisodeIndex + 1))}
+                        disabled={selectedEpisodeIndex === episodes.length - 1}
+                        style={{
+                            background: selectedEpisodeIndex === episodes.length - 1 ? '#333' : '#7c3aed',
+                            color: '#fff', border: 'none', borderRadius: '6px',
+                            padding: '8px 12px', cursor: selectedEpisodeIndex === episodes.length - 1 ? 'not-allowed' : 'pointer',
+                            fontWeight: 'bold'
+                        }}
+                    >
+                        Next →
                     </button>
                 </div>
             )}

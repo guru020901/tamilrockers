@@ -46,14 +46,31 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                         const data = await res.json();
 
                         if (data.success) {
+                            // Handle both movie format and series format
+                            const isSeriesFormat = data.data.isSeriesFormat && data.data.episodes;
+
                             setMovie({
                                 id,
-                                title: title || 'Unknown Title',
+                                title: data.data.metadata?.seriesName || title || 'Unknown Title',
                                 poster: data.data.poster,
-                                magnets: data.data.magnets.map((m: any) => m.link),
-                                watch: data.data.watch,
+                                // For series: flatten all episode magnets, for movies: use magnets array
+                                magnets: isSeriesFormat
+                                    ? data.data.episodes.flatMap((ep: any) => ep.torrents.map((t: any) => t.link))
+                                    : data.data.magnets?.map((m: any) => m.link) || [],
+                                watch: isSeriesFormat
+                                    ? data.data.episodes[0]?.videoPreview
+                                    : data.data.watch,
                                 quality: 'HD Scraped',
-                                imdb: data.data.imdbId || ''
+                                imdb: data.data.imdbId || '',
+                                // New fields for series
+                                isSeriesFormat,
+                                episodes: data.data.episodes,
+                                metadata: data.data.metadata,
+                                allTorrents: isSeriesFormat
+                                    ? data.data.episodes.flatMap((ep: any) =>
+                                        ep.torrents.map((t: any) => ({ ...t, episode: ep.number }))
+                                    )
+                                    : data.data.magnets
                             });
                         }
                     } catch (err) {
@@ -106,17 +123,108 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                 </div>
 
                 <div style={{ marginBottom: '30px' }}>
-                    {/* Pass IMDB ID, MAGNET LIST, watch URL and TITLE for auto IMDB lookup */}
-                    <VideoPlayer magnets={movie.magnets || []} imdb={movie.imdb} watch={movie.watch} title={movie.title} />
+                    {/* Pass IMDB ID, MAGNET LIST, watch URL, TITLE and EPISODES for multi-episode support */}
+                    <VideoPlayer
+                        magnets={movie.magnets || []}
+                        imdb={movie.imdb}
+                        watch={movie.watch}
+                        title={movie.title}
+                        episodes={movie.episodes}
+                    />
                 </div>
+
+                {/* Series Metadata (if available) */}
+                {movie.metadata && (
+                    <div style={{ background: '#1a1a2e', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
+                        {movie.metadata.director && (
+                            <p style={{ margin: '5px 0', color: '#aaa' }}>
+                                <strong style={{ color: '#fff' }}>Director:</strong> {movie.metadata.director}
+                            </p>
+                        )}
+                        {movie.metadata.originalTitle && (
+                            <p style={{ margin: '5px 0', color: '#aaa' }}>
+                                <strong style={{ color: '#fff' }}>Original Title:</strong> {movie.metadata.originalTitle}
+                            </p>
+                        )}
+                        {movie.metadata.plotSummary && (
+                            <p style={{ margin: '10px 0', color: '#ccc', lineHeight: '1.6' }}>
+                                {movie.metadata.plotSummary}
+                            </p>
+                        )}
+                    </div>
+                )}
 
                 <div style={{ background: '#1f1f1f', padding: '20px', borderRadius: '8px' }}>
                     <h2 style={{ fontSize: '1.2rem', marginBottom: '15px' }}>
                         <Download size={20} style={{ verticalAlign: 'middle', marginRight: '10px' }} />
-                        Direct Download Links (P2P)
+                        {movie.isSeriesFormat ? 'Episodes & Downloads' : 'Direct Download Links'}
                     </h2>
 
-                    {movie.magnets && movie.magnets.length > 0 ? (
+                    {/* Episode-aware torrent list */}
+                    {movie.allTorrents && movie.allTorrents.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {movie.allTorrents.map((torrent: any, idx: number) => (
+                                <div key={idx} style={{
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    background: '#2a2a2a', padding: '12px 15px', borderRadius: '6px',
+                                    borderLeft: '4px solid #ff5722'
+                                }}>
+                                    <div style={{ flex: 1, overflow: 'hidden' }}>
+                                        {/* Episode Badge */}
+                                        {torrent.episode && (
+                                            <span style={{
+                                                background: '#7c3aed', color: '#fff', padding: '2px 8px',
+                                                borderRadius: '4px', fontSize: '0.75rem', marginRight: '8px'
+                                            }}>
+                                                EP {torrent.episode}
+                                            </span>
+                                        )}
+
+                                        {/* Quality Badge */}
+                                        <span style={{
+                                            background: torrent.quality === '1080p' ? '#10b981' :
+                                                torrent.quality === '720p' ? '#3b82f6' :
+                                                    torrent.quality === '480p' ? '#f59e0b' : '#6b7280',
+                                            color: '#fff', padding: '2px 8px', borderRadius: '4px',
+                                            fontSize: '0.75rem', marginRight: '8px'
+                                        }}>
+                                            {torrent.quality}
+                                        </span>
+
+                                        {/* Size Badge */}
+                                        {torrent.size && (
+                                            <span style={{
+                                                background: '#374151', color: '#9ca3af', padding: '2px 8px',
+                                                borderRadius: '4px', fontSize: '0.75rem', marginRight: '10px'
+                                            }}>
+                                                {torrent.size}
+                                            </span>
+                                        )}
+
+                                        {/* Filename */}
+                                        <span style={{
+                                            fontSize: '0.85rem', color: '#d1d5db',
+                                            display: 'block', marginTop: '6px',
+                                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                                        }}>
+                                            {torrent.filename}
+                                        </span>
+                                    </div>
+
+                                    <a
+                                        href={torrent.link}
+                                        style={{
+                                            background: '#10b981', color: '#fff', padding: '8px 16px',
+                                            borderRadius: '6px', fontWeight: 'bold', textDecoration: 'none',
+                                            display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0
+                                        }}
+                                    >
+                                        <Download size={16} /> GET
+                                    </a>
+                                </div>
+                            ))}
+                        </div>
+                    ) : movie.magnets && movie.magnets.length > 0 ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             {movie.magnets.map((magnet: string, idx: number) => (
                                 <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', background: '#333', padding: '10px', borderRadius: '4px' }}>
@@ -128,7 +236,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                             ))}
                         </div>
                     ) : (
-                        <div style={{ color: '#888' }}>No P2P links available for this title. Use Native Stream.</div>
+                        <div style={{ color: '#888' }}>No download links available. Use Native Stream.</div>
                     )}
                 </div>
             </div>
