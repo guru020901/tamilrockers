@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { fetchHtmlWithBypass } from '@/lib/proxy'; // Use puppeteer instead
 import { scrapeWithPuppeteer } from '@/lib/browser';
 
+export const maxDuration = 60; // Allow 60s for Puppeteer (if Pro plan)
+
 /**
  * 🕵️‍♂️ STREAM EXTRACTOR API
  * Extracts direct video links (.m3u8, .mp4) from hosting pages

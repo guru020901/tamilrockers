@@ -356,13 +356,17 @@ export async function GET(request: Request) {
                 }
             }
 
+            // Decode HTML entities in filename
+            displayName = displayName.replace(/&#8211;/g, '-')
+                .replace(/&ndash;/g, '-')
+                .replace(/&#x2013;/g, '-')
+                .replace(/&amp;/g, '&')
+                .replace(/&#038;/g, '&');
+
             // aggressive cleanup of site prefixes
-            displayName = displayName.replace(/www\.1TamilBlasters\.[a-zA-Z]+ - /gi, '')
-                .replace(/www\.[a-zA-Z0-9]+\.[a-zA-Z]+ - /gi, '')
+            displayName = displayName.replace(/www\.1TamilBlasters\.[a-zA-Z]+\s*[-–]\s*/gi, '')
+                .replace(/www\.[a-zA-Z0-9]+\.[a-zA-Z]+\s*[-–]\s*/gi, '')
                 .trim();
-
-            // Make URL absolute if relative
-
             // Make URL absolute if relative
             const absoluteUrl = url.startsWith('http') ? url : `https://www.1tamilblasters.business${url.startsWith('/') ? '' : '/'}${url}`;
 
