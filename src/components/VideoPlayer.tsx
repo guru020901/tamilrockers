@@ -6,11 +6,17 @@ import { Play, Pause, Activity, Loader, Cloud, Database, Wifi, Shield, ShieldChe
 
 import { BraveShield } from './BraveShield';
 
+// Player interface for multi-player support
+interface Player {
+    number: number;
+    url: string;
+}
+
 // Episode interface for series content
 interface Episode {
     number: string;
     title: string;
-    videoPreview?: string;
+    players: Player[]; // Multiple players per episode
     torrents: { quality: string; size: string; link: string; filename: string }[];
 }
 
@@ -19,7 +25,7 @@ interface VideoPlayerProps {
     imdb?: string;
     watch?: string;
     title?: string;
-    episodes?: Episode[]; // NEW: For series with multiple episodes
+    episodes?: Episode[]; // For series with multiple episodes
 }
 
 const SERVERS = [
@@ -33,10 +39,14 @@ const SERVERS = [
 const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, episodes }) => {
     // Episode state for series content
     const [selectedEpisodeIndex, setSelectedEpisodeIndex] = useState(0);
+    const [selectedPlayerIndex, setSelectedPlayerIndex] = useState(0); // Multi-player support
     const currentEpisode = episodes && episodes.length > 0 ? episodes[selectedEpisodeIndex] : null;
 
-    // Effective watch URL (either from episode or direct prop)
-    const effectiveWatch = currentEpisode?.videoPreview || watch;
+    // Get current player's URL
+    const currentPlayer = currentEpisode?.players?.[selectedPlayerIndex];
+
+    // Effective watch URL (from selected player or direct prop)
+    const effectiveWatch = currentPlayer?.url || watch;
 
     // Default mode selection based on available data
     const getDefaultMode = () => {
@@ -72,11 +82,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
     // Preloader state - warms up iframe in background
     const [iframePreloaded, setIframePreloaded] = useState(false);
 
-    // Reset clean URL when episode changes
+    // Reset clean URL and player when episode changes
     useEffect(() => {
         setCleanUrl('');
         setCleanType('');
         setIframeError(false);
+        setSelectedPlayerIndex(0); // Reset to first player
     }, [selectedEpisodeIndex]);
 
     // Effect: TURBO DIRECT - Aggressively try to extract clean stream IMMEDIATELY
@@ -348,9 +359,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
 
             {/* Episode Selector (for series content) */}
             {episodes && episodes.length > 1 && !isFullscreen && (
-                <div style={{ 
-                    display: 'flex', alignItems: 'center', gap: '10px', 
-                    padding: '12px 15px', background: '#0d0d1a', 
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '12px 15px', background: '#0d0d1a',
                     borderBottom: '1px solid #2a2a4a'
                 }}>
                     <span style={{ color: '#888', fontSize: '0.85rem', fontWeight: 'bold' }}>
@@ -361,7 +372,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                         onChange={(e) => setSelectedEpisodeIndex(Number(e.target.value))}
                         style={{
                             flex: 1, maxWidth: '300px',
-                            background: '#1a1a2e', color: '#fff', 
+                            background: '#1a1a2e', color: '#fff',
                             border: '1px solid #7c3aed', borderRadius: '8px',
                             padding: '10px 15px', fontSize: '0.9rem', fontWeight: 'bold',
                             cursor: 'pointer', outline: 'none'
@@ -373,13 +384,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                             </option>
                         ))}
                     </select>
-                    
+
                     {/* Quick Nav Buttons */}
                     <button
                         onClick={() => setSelectedEpisodeIndex(Math.max(0, selectedEpisodeIndex - 1))}
                         disabled={selectedEpisodeIndex === 0}
                         style={{
-                            background: selectedEpisodeIndex === 0 ? '#333' : '#7c3aed', 
+                            background: selectedEpisodeIndex === 0 ? '#333' : '#7c3aed',
                             color: '#fff', border: 'none', borderRadius: '6px',
                             padding: '8px 12px', cursor: selectedEpisodeIndex === 0 ? 'not-allowed' : 'pointer',
                             fontWeight: 'bold'
@@ -399,6 +410,33 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                     >
                         Next →
                     </button>
+
+                    {/* Player Selector */}
+                    {currentEpisode && currentEpisode.players && currentEpisode.players.length > 1 && (
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            marginLeft: 'auto', paddingLeft: '15px', borderLeft: '1px solid #333'
+                        }}>
+                            <span style={{ color: '#888', fontSize: '0.85rem' }}>🎬 Player:</span>
+                            {currentEpisode.players.map((player, idx) => (
+                                <button
+                                    key={idx}
+                                    onClick={() => setSelectedPlayerIndex(idx)}
+                                    style={{
+                                        background: selectedPlayerIndex === idx
+                                            ? 'linear-gradient(135deg, #00C9FF, #92FE9D)'
+                                            : '#2a2a2a',
+                                        color: selectedPlayerIndex === idx ? '#000' : '#fff',
+                                        border: 'none', borderRadius: '6px',
+                                        padding: '6px 12px', fontWeight: 'bold',
+                                        cursor: 'pointer', fontSize: '0.85rem'
+                                    }}
+                                >
+                                    {player.number.toString().padStart(2, '0')}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
 
