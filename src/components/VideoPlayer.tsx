@@ -566,7 +566,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                         {cleanType === 'hls' ? (
                             <ReactHlsPlayer
                                 playerRef={playerRef as any}
-                                src={cleanUrl} // Direct URL - relay causes 502 on Vercel Edge
+                                src={`/api/relay?url=${encodeURIComponent(cleanUrl)}&referer=${encodeURIComponent(cleanReferer)}`}
                                 autoPlay
                                 controls={showControls}
                                 width="100%"
@@ -607,7 +607,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                         ) : (
                             <video
                                 ref={playerRef}
-                                src={cleanUrl} // Direct URL - relay causes 502 on Vercel Edge
+                                src={`/api/relay?url=${encodeURIComponent(cleanUrl)}&referer=${encodeURIComponent(cleanReferer)}`}
                                 controls={showControls}
                                 autoPlay
                                 preload="auto"
