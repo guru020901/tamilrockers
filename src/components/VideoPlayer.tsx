@@ -439,30 +439,39 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                         </button>
                     </div>
 
-                    {/* Player Selector */}
+                    {/* Player Selector - Always visible when multiple players */}
                     {currentEpisode && currentEpisode.players && currentEpisode.players.length > 1 && (
                         <div style={{
                             display: 'flex', alignItems: 'center', gap: '8px',
-                            marginLeft: 'auto', paddingLeft: '15px', borderLeft: '1px solid #333'
+                            marginLeft: 'auto', paddingLeft: '15px', borderLeft: '1px solid #333',
+                            flexWrap: 'wrap'
                         }}>
-                            <span style={{ color: '#888', fontSize: '0.85rem' }}>🎬 Player:</span>
-                            {currentEpisode.players.map((player, idx) => (
-                                <button
-                                    key={idx}
-                                    onClick={() => setSelectedPlayerIndex(idx)}
-                                    style={{
-                                        background: selectedPlayerIndex === idx
-                                            ? 'linear-gradient(135deg, #00C9FF, #92FE9D)'
-                                            : '#2a2a2a',
-                                        color: selectedPlayerIndex === idx ? '#000' : '#fff',
-                                        border: 'none', borderRadius: '6px',
-                                        padding: '6px 12px', fontWeight: 'bold',
-                                        cursor: 'pointer', fontSize: '0.85rem'
-                                    }}
-                                >
-                                    {player.number.toString().padStart(2, '0')}
-                                </button>
-                            ))}
+                            <span style={{ color: '#888', fontSize: '0.85rem' }}>🎬 Server:</span>
+                            {currentEpisode.players.map((player, idx) => {
+                                // Identify server name from URL
+                                let serverName = `Server ${idx + 1}`;
+                                if (player.url.includes('luluvid')) serverName = 'Luluvid';
+                                else if (player.url.includes('hglink')) serverName = 'HGLink';
+                                else if (player.url.includes('streamtape')) serverName = 'Streamtape';
+
+                                return (
+                                    <button
+                                        key={idx}
+                                        onClick={() => setSelectedPlayerIndex(idx)}
+                                        style={{
+                                            background: selectedPlayerIndex === idx
+                                                ? 'linear-gradient(135deg, #00C9FF, #92FE9D)'
+                                                : '#2a2a2a',
+                                            color: selectedPlayerIndex === idx ? '#000' : '#fff',
+                                            border: 'none', borderRadius: '6px',
+                                            padding: '6px 12px', fontWeight: 'bold',
+                                            cursor: 'pointer', fontSize: '0.85rem'
+                                        }}
+                                    >
+                                        {serverName}
+                                    </button>
+                                );
+                            })}
                         </div>
                     )}
                 </div>
