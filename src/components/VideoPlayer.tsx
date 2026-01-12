@@ -472,12 +472,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                         </button>
                         <button
                             className="player-nav-btn"
-                            onClick={() => setSelectedEpisodeIndex(Math.min(episodes.length - 1, selectedEpisodeIndex + 1))}
-                            disabled={selectedEpisodeIndex === episodes.length - 1}
+                            onClick={() => setSelectedEpisodeIndex(Math.min((episodes?.length || 1) - 1, selectedEpisodeIndex + 1))}
+                            disabled={!episodes || selectedEpisodeIndex === episodes.length - 1}
                             style={{
-                                background: selectedEpisodeIndex === episodes.length - 1 ? '#333' : '#7c3aed',
+                                background: !episodes || selectedEpisodeIndex === episodes.length - 1 ? '#333' : '#7c3aed',
                                 color: '#fff', border: 'none', borderRadius: '6px',
-                                padding: '8px 12px', cursor: selectedEpisodeIndex === episodes.length - 1 ? 'not-allowed' : 'pointer',
+                                padding: '8px 12px', cursor: !episodes || selectedEpisodeIndex === episodes.length - 1 ? 'not-allowed' : 'pointer',
                                 fontWeight: 'bold'
                             }}
                         >
