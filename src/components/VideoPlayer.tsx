@@ -1,7 +1,10 @@
 'use client';
 
 import React, { useRef, useState, useEffect } from 'react';
-import ReactHlsPlayer from 'react-hls-player';
+import dynamic from 'next/dynamic';
+
+// 🎬 Dynamic import for AdvancedPlayer (with HLS.js + Plyr)
+const AdvancedPlayer = dynamic(() => import('./AdvancedPlayer'), { ssr: false });
 import { Play, Pause, Activity, Loader, Cloud, Database, Wifi, Shield, ShieldCheck, ExternalLink, Zap, Server, AlertCircle, Maximize, Minimize, Settings } from 'lucide-react';
 
 import { BraveShield } from './BraveShield';
@@ -74,6 +77,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
     const [cleanUrl, setCleanUrl] = useState<string>('');
     const [cleanType, setCleanType] = useState<string>('');
     const [cleanReferer, setCleanReferer] = useState<string>(''); // Store correct referer
+    const [cleanCookie, setCleanCookie] = useState<string>(''); // Store session cookie
     const [isExtracting, setIsExtracting] = useState(false);
     const playerRef = useRef<HTMLVideoElement>(null);
 
@@ -106,24 +110,18 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                     const data = await res.json();
 
                     if (data.success && data.streamUrl) {
-                        // 🚨 SECURITY CHECK: Some providers (Luluvid/tnmr.org) aggressively block proxies/cors.
-                        // If we detect these, we must ABORT extraction and use the iframe.
-                        const BLOCKED_DOMAINS = ['tnmr.org', 'luluvid.net'];
-                        if (BLOCKED_DOMAINS.some(d => data.streamUrl.includes(d))) {
-                            console.warn('[Turbo Extraction] URL detected as BLOCKED (403/CORS). Forcing native iframe.');
-                            throw new Error('Blocked Domain - Force Iframe');
-                        }
-
-                        console.log('[Turbo Extraction] SUCCESS:', data.streamUrl);
+                        console.log('[Turbo Extraction] ✅ SUCCESS:', data.streamUrl);
                         setCleanUrl(data.streamUrl);
                         setCleanType(data.type);
                         // Use header referer if available, else fall back to watch URL
                         setCleanReferer(data.headers?.Referer || watch || '');
+                        setCleanCookie(data.headers?.Cookie || '');
+                        setIsExtracting(false);
                         setMode('native-clean');
                         return; // Success - stop retrying
                     }
                 } catch (e) {
-                    console.error('[Turbo Extraction] Failed:', e);
+                    console.warn('[Turbo Extraction] Attempt failed:', e);
                 }
 
                 // Retry logic (up to 3 attempts with different strategies)
@@ -310,58 +308,101 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
     return (
         <div ref={containerRef} style={containerStyle}>
             <BraveShield />
-            {/* Mode Switcher (Hidden in Fullscreen) */}
+            {/* 🎮 ENHANCED MODE SWITCHER - 4 Player Types */}
             {!isFullscreen && (
                 <div style={{
-                    display: 'flex', background: '#111',
-                    borderBottom: '1px solid #222', overflowX: 'auto',
-                    scrollbarWidth: 'none'
+                    display: 'flex', background: 'linear-gradient(180deg, #111 0%, #0a0a0a 100%)',
+                    borderBottom: '1px solid #222', overflowX: 'auto', scrollbarWidth: 'none', padding: '8px 10px', gap: '8px'
                 }}>
+                    <style>{`
+                        .mode-btn { transition: all 0.3s ease; transform: scale(1); }
+                        .mode-btn:hover { transform: scale(1.05); filter: brightness(1.2); }
+                        @keyframes glow { 0%, 100% { box-shadow: 0 0 8px currentColor; } 50% { box-shadow: 0 0 20px currentColor; } }
+                        .mode-active { animation: glow 2s ease-in-out infinite; }
+                    `}</style>
+
+                    {/* NATIVE - Direct iframe embed */}
                     {watch && (
                         <button
-                            onClick={() => { setMode(cleanUrl ? 'native-clean' : 'native-direct'); setIframeError(false); }}
+                            className={`mode-btn ${mode === 'native-direct' ? 'mode-active' : ''}`}
+                            onClick={() => { setMode('native-direct'); setIframeError(false); }}
                             style={{
-                                flex: 1, padding: '14px', background: mode.includes('native') ? '#1a1a1a' : 'transparent',
-                                border: 'none', color: mode.includes('native') ? '#ff5722' : '#666',
-                                cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                                borderBottom: mode.includes('native') ? '2px solid #ff5722' : 'none', minWidth: '120px', whiteSpace: 'nowrap'
+                                flex: 1, padding: '12px 16px',
+                                background: mode === 'native-direct' ? 'linear-gradient(135deg, #ff5722 0%, #ff9100 100%)' : '#1a1a1a',
+                                border: mode === 'native-direct' ? 'none' : '1px solid #333',
+                                color: '#fff', cursor: 'pointer', fontWeight: 'bold',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                borderRadius: '8px', minWidth: '90px', fontSize: '0.85rem'
                             }}
+                            title="Direct embed from source (may have ads)"
                         >
-                            {isExtracting ? <Loader size={18} className="animate-spin" /> : <Activity size={18} />}
-                            {mode === 'native-clean' ? 'CLEAN' : 'DIRECT'}
+                            <Shield size={16} /> NATIVE
                         </button>
                     )}
 
+                    {/* TURBO - Clean extracted stream */}
+                    {watch && (
+                        <button
+                            className={`mode-btn ${mode === 'native-clean' ? 'mode-active' : ''}`}
+                            onClick={() => { if (cleanUrl) setMode('native-clean'); }}
+                            style={{
+                                flex: 1, padding: '12px 16px',
+                                background: mode === 'native-clean' ? 'linear-gradient(135deg, #00C9FF 0%, #92FE9D 100%)' : '#1a1a1a',
+                                border: mode === 'native-clean' ? 'none' : '1px solid #333',
+                                color: mode === 'native-clean' ? '#000' : cleanUrl ? '#fff' : '#555',
+                                cursor: cleanUrl ? 'pointer' : 'not-allowed', fontWeight: 'bold',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                borderRadius: '8px', minWidth: '90px', fontSize: '0.85rem'
+                            }}
+                            title={cleanUrl ? "Ultra-fast ad-free playback" : "Extracting stream..."}
+                        >
+                            {isExtracting ? <Loader size={16} className="animate-spin" /> : <Zap size={16} />}
+                            TURBO
+                        </button>
+                    )}
+
+                    {/* CLOUD - Premium streaming servers */}
                     <button
+                        className={`mode-btn ${mode === 'cloud' ? 'mode-active' : ''}`}
                         onClick={() => setMode('cloud')}
                         style={{
-                            flex: 1, padding: '14px', background: mode === 'cloud' ? '#1a1a1a' : 'transparent',
-                            border: 'none', color: mode === 'cloud' ? '#00e5ff' : '#666',
-                            cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                            borderBottom: mode === 'cloud' ? '2px solid #00e5ff' : 'none', minWidth: '100px'
+                            flex: 1, padding: '12px 16px',
+                            background: mode === 'cloud' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#1a1a1a',
+                            border: mode === 'cloud' ? 'none' : '1px solid #333',
+                            color: '#fff', cursor: 'pointer', fontWeight: 'bold',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                            borderRadius: '8px', minWidth: '90px', fontSize: '0.85rem'
                         }}
+                        title="Premium ad-free streaming servers"
                     >
-                        <Cloud size={18} /> CLOUD
-                    </button>
-                    <button
-                        onClick={() => setMode('p2p')}
-                        style={{
-                            flex: 1, padding: '14px', background: mode === 'p2p' ? '#1a1a1a' : 'transparent',
-                            border: 'none', color: mode === 'p2p' ? '#00ff00' : '#666',
-                            cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                            borderBottom: mode === 'p2p' ? '2px solid #00ff00' : 'none', minWidth: '100px'
-                        }}
-                    >
-                        <Database size={18} /> P2P
+                        <Cloud size={16} /> CLOUD
                     </button>
 
-                    {/* Fullscreen Toggle (Standard) */}
+                    {/* P2P - Torrent streaming  */}
                     <button
+                        className={`mode-btn ${mode === 'p2p' ? 'mode-active' : ''}`}
+                        onClick={() => setMode('p2p')}
+                        style={{
+                            flex: 1, padding: '12px 16px',
+                            background: mode === 'p2p' ? 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)' : '#1a1a1a',
+                            border: mode === 'p2p' ? 'none' : '1px solid #333',
+                            color: '#fff', cursor: 'pointer', fontWeight: 'bold',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                            borderRadius: '8px', minWidth: '90px', fontSize: '0.85rem'
+                        }}
+                        title="Peer-to-peer torrent streaming"
+                    >
+                        <Database size={16} /> P2P
+                    </button>
+
+                    {/* Fullscreen Toggle */}
+                    <button
+                        className="mode-btn"
                         onClick={toggleFullscreenMode}
                         style={{
-                            padding: '0 20px', background: 'transparent',
-                            border: 'none', color: '#666',
-                            cursor: 'pointer', fontWeight: 'bold', borderLeft: '1px solid #222'
+                            padding: '12px 16px', background: '#1a1a1a',
+                            border: '1px solid #333', color: '#888', cursor: 'pointer',
+                            borderRadius: '8px', display: 'flex', alignItems: 'center'
                         }}
                         title="Toggle Fullscreen"
                     >
@@ -370,33 +411,38 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                 </div>
             )}
 
-            {/* Episode Selector (for series content) */}
-            {episodes && episodes.length > 1 && !isFullscreen && (
+            {/* Episode/Server Selector (for series OR movies with multiple players) */}
+            {((episodes && episodes.length > 1) || (currentEpisode && currentEpisode.players && currentEpisode.players.length > 1)) && !isFullscreen && (
                 <div className="player-cloud-header" style={{
                     display: 'flex', alignItems: 'center', gap: '15px',
                     padding: '12px 20px', background: '#0f0f1a', borderBottom: '1px solid #333'
                 }}>
-                    <span className="player-label" style={{ color: '#888', fontSize: '0.85rem', fontWeight: 'bold' }}>
-                        📺 Episode:
-                    </span>
-                    <select
-                        className="player-ep-select"
-                        value={selectedEpisodeIndex}
-                        onChange={(e) => setSelectedEpisodeIndex(Number(e.target.value))}
-                        style={{
-                            flex: 1, maxWidth: '300px',
-                            background: '#1a1a2e', color: '#fff',
-                            border: '1px solid #7c3aed', borderRadius: '8px',
-                            padding: '10px 15px', fontSize: '0.9rem', fontWeight: 'bold',
-                            cursor: 'pointer', outline: 'none'
-                        }}
-                    >
-                        {episodes.map((ep, idx) => (
-                            <option key={idx} value={idx}>
-                                Episode {ep.number} {ep.title !== `Episode ${ep.number}` ? `- ${ep.title}` : ''}
-                            </option>
-                        ))}
-                    </select>
+                    {/* Episode dropdown - only for series with multiple episodes */}
+                    {episodes && episodes.length > 1 && (
+                        <>
+                            <span className="player-label" style={{ color: '#888', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                                📺 Episode:
+                            </span>
+                            <select
+                                className="player-ep-select"
+                                value={selectedEpisodeIndex}
+                                onChange={(e) => setSelectedEpisodeIndex(Number(e.target.value))}
+                                style={{
+                                    flex: 1, maxWidth: '300px',
+                                    background: '#1a1a2e', color: '#fff',
+                                    border: '1px solid #7c3aed', borderRadius: '8px',
+                                    padding: '10px 15px', fontSize: '0.9rem', fontWeight: 'bold',
+                                    cursor: 'pointer', outline: 'none'
+                                }}
+                            >
+                                {episodes.map((ep, idx) => (
+                                    <option key={idx} value={idx}>
+                                        Episode {ep.number} {ep.title !== `Episode ${ep.number}` ? `- ${ep.title}` : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        </>
+                    )}
 
                     {/* Mobile Styles */}
                     <style>{`
@@ -638,89 +684,18 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                             onClick={togglePlay}
                         />
 
-                        {cleanType === 'hls' ? (
-                            <ReactHlsPlayer
-                                playerRef={playerRef as any}
-                                src={`/api/relay?url=${encodeURIComponent(cleanUrl)}&referer=${encodeURIComponent(cleanReferer)}`}
-                                autoPlay
-                                controls={showControls}
-                                width="100%"
-                                height="100%"
-                                style={{ background: '#000', outline: 'none' }}
-                                onPlay={onPlay}
-                                onPause={onPause}
-                                onWaiting={onWaiting}
-                                onPlaying={onPlaying}
-                                hlsConfig={{
-                                    // ⚡ ULTRA-FAST ENTERPRISE-GRADE STREAMING CONFIG ⚡
-
-                                    // === INSTANT STARTUP ===
-                                    autoStartLoad: true,
-                                    startLevel: 0, // Start with lowest quality for INSTANT playback
-                                    capLevelToPlayerSize: true,
-                                    startPosition: -1, // Start from live edge
-
-                                    // === MULTITHREADED DECODING ===
-                                    enableWorker: true, // Web Worker for HLS parsing (faster)
-
-                                    // === LOW LATENCY MODE ===
-                                    lowLatencyMode: true, // Minimize delay
-
-                                    // === AGGRESSIVE PRE-BUFFERING (Zero Stall) ===
-                                    maxBufferLength: 120, // 2 mins forward buffer
-                                    maxMaxBufferLength: 600, // Max 10 mins (for slow networks)
-                                    maxBufferSize: 120 * 1000 * 1000, // 120MB buffer
-                                    maxBufferHole: 0.1, // Tiny gap tolerance
-                                    backBufferLength: 90, // 1.5 mins backward (for rewind)
-
-                                    // === ULTRA-FAST FRAGMENT LOADING ===
-                                    manifestLoadingTimeOut: 5000, // 5s manifest timeout
-                                    manifestLoadingMaxRetry: 6,
-                                    manifestLoadingRetryDelay: 500, // Fast retry
-                                    levelLoadingTimeOut: 5000,
-                                    levelLoadingMaxRetry: 6,
-                                    levelLoadingRetryDelay: 500,
-                                    fragLoadingTimeOut: 10000, // 10s per fragment
-                                    fragLoadingMaxRetry: 8,
-                                    fragLoadingRetryDelay: 500,
-
-                                    // === SMART ABR (Adaptive Bitrate) ===
-                                    abrEwmaFastLive: 2, // Fast bandwidth estimation
-                                    abrEwmaSlowLive: 6,
-                                    abrEwmaFastVoD: 3,
-                                    abrEwmaSlowVoD: 9,
-                                    abrEwmaDefaultEstimate: 5000000, // Assume 5Mbps initially
-                                    abrBandWidthFactor: 0.9, // Conservative downgrade
-                                    abrBandWidthUpFactor: 0.8, // Faster upgrade
-                                    abrMaxWithRealBitrate: true, // Use real bitrate for decisions
-
-                                    // === STALL PREVENTION ===
-                                    nudgeOffset: 0.1,
-                                    nudgeMaxRetry: 5,
-
-                                    // === PREFETCH NEXT SEGMENT ===
-                                    maxFragLookUpTolerance: 0.25,
-                                    initialLiveManifestSize: 3,
-
-                                    // === ADVANCED ERROR RECOVERY ===
-                                    appendErrorMaxRetry: 5,
-                                }}
-                            />
-                        ) : (
-                            <video
-                                ref={playerRef}
-                                src={`/api/relay?url=${encodeURIComponent(cleanUrl)}&referer=${encodeURIComponent(cleanReferer)}`}
-                                controls={showControls}
-                                autoPlay
-                                preload="auto"
-                                playsInline
-                                style={{ width: '100%', height: '100%', background: '#000', outline: 'none' }}
-                                onPlay={onPlay}
-                                onPause={onPause}
-                                onWaiting={onWaiting}
-                                onPlaying={onPlaying}
-                            />
-                        )}
+                        {/* 🎬 ADVANCED PLAYER - HLS.js + Premium Controls */}
+                        <AdvancedPlayer
+                            src={`/api/relay?url=${encodeURIComponent(cleanUrl)}&referer=${encodeURIComponent(cleanReferer)}&cookie=${encodeURIComponent(cleanCookie)}`}
+                            type={cleanType as 'hls' | 'mp4'}
+                            onPlay={onPlay}
+                            onPause={onPause}
+                            onReady={() => setIsBuffering(false)}
+                            onError={(e) => {
+                                console.warn('[AdvancedPlayer] Error, falling back to direct embed for stability...', e);
+                                setMode('native-direct');
+                            }}
+                        />
 
                         {/* Custom Touch Overlay for Mobile */}
                         <div style={{
@@ -804,16 +779,38 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                                 </a>
                             </div>
                         ) : (
-                            <iframe
-                                key={`${effectiveWatch}-${selectedEpisodeIndex}-${selectedPlayerIndex}`}
-                                src={effectiveWatch}
-                                style={{ width: '100%', height: '100%', border: 'none', pointerEvents: adShieldActive ? 'none' : 'auto', background: '#000' }}
-                                allowFullScreen
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                referrerPolicy="no-referrer"
-                                loading="eager"
-                                onError={() => setIframeError(true)}
-                            />
+                            <>
+                                {/* 🚀 ULTRA-FAST IFRAME EMBED */}
+                                <style>{`
+                                    @keyframes fadeInPlayer {
+                                        from { opacity: 0; transform: scale(0.98); }
+                                        to { opacity: 1; transform: scale(1); }
+                                    }
+                                    .ultra-fast-iframe {
+                                        animation: fadeInPlayer 0.3s ease-out;
+                                    }
+                                `}</style>
+                                <iframe
+                                    key={`${effectiveWatch}-${selectedEpisodeIndex}-${selectedPlayerIndex}`}
+                                    className="ultra-fast-iframe"
+                                    src={effectiveWatch}
+                                    style={{
+                                        width: '100%',
+                                        height: '100%',
+                                        border: 'none',
+                                        pointerEvents: adShieldActive ? 'none' : 'auto',
+                                        background: '#000'
+                                    }}
+                                    allowFullScreen
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+                                    referrerPolicy="no-referrer"
+                                    loading="eager"
+                                    // @ts-ignore - fetchpriority is a new attribute
+                                    fetchpriority="high"
+                                    onLoad={() => console.log('[Player] ⚡ Iframe loaded - ready for playback')}
+                                    onError={() => setIframeError(true)}
+                                />
+                            </>
                         )}
                     </div>
                 )}

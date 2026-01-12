@@ -56,7 +56,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                                 // For series: flatten all episode magnets, for movies: use magnets array
                                 magnets: isSeriesFormat
                                     ? data.data.episodes.flatMap((ep: any) => ep.torrents.map((t: any) => t.link))
-                                    : data.data.magnets?.map((m: any) => m.link) || [],
+                                    : (data.data.magnets?.map((m: any) => m.link) || data.data.episodes?.[0]?.torrents?.map((t: any) => t.link) || []),
                                 watch: isSeriesFormat
                                     ? data.data.episodes[0]?.videoPreview
                                     : data.data.watch,
@@ -70,7 +70,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                                     ? data.data.episodes.flatMap((ep: any) =>
                                         ep.torrents.map((t: any) => ({ ...t, episode: ep.number }))
                                     )
-                                    : data.data.magnets
+                                    : (data.data.magnets || data.data.episodes?.[0]?.torrents || [])
                             });
                         }
                     } catch (err) {
@@ -181,15 +181,17 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                                         )}
 
                                         {/* Quality Badge */}
-                                        <span style={{
-                                            background: torrent.quality === '1080p' ? '#10b981' :
-                                                torrent.quality === '720p' ? '#3b82f6' :
-                                                    torrent.quality === '480p' ? '#f59e0b' : '#6b7280',
-                                            color: '#fff', padding: '2px 8px', borderRadius: '4px',
-                                            fontSize: '0.75rem', marginRight: '8px'
-                                        }}>
-                                            {torrent.quality}
-                                        </span>
+                                        {torrent.quality && torrent.quality !== 'Unknown' && (
+                                            <span style={{
+                                                background: torrent.quality === '1080p' ? '#10b981' :
+                                                    torrent.quality === '720p' ? '#3b82f6' :
+                                                        torrent.quality === '480p' ? '#f59e0b' : '#6b7280',
+                                                color: '#fff', padding: '2px 8px', borderRadius: '4px',
+                                                fontSize: '0.75rem', marginRight: '8px'
+                                            }}>
+                                                {torrent.quality}
+                                            </span>
+                                        )}
 
                                         {/* Size Badge */}
                                         {torrent.size && (

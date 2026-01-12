@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { USER_AGENT } from '@/lib/config';
 
 /**
  * 🚀 STREAM RELAY API - Video Proxy
@@ -18,16 +19,17 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const targetUrl = searchParams.get('url');
     const referer = searchParams.get('referer');
+    const cookie = searchParams.get('cookie'); // Read cookie
 
     if (!targetUrl) {
-        return new NextResponse('Missing URL', { status: 400 });
+        return new NextResponse('Missing URL parameter', { status: 400 });
     }
 
     console.log(`[API/Relay] Proxying: ${targetUrl.substring(0, 80)}...`);
 
     try {
         const headers: Record<string, string> = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': USER_AGENT, // Use standard UA
             'Accept': '*/*',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'identity', // Don't accept gzip for streaming
@@ -65,14 +67,48 @@ export async function GET(request: Request) {
             return new NextResponse(`Upstream error: ${response.status}`, { status: response.status });
         }
 
-        // Get content info
-        const contentType = response.headers.get('content-type') || 'application/octet-stream';
+        // Check if content is M3U8 playlist
+        const contentType = response.headers.get('content-type') || '';
+        const isM3u8 = contentType.includes('mpegurl') || contentType.includes('m3u8') || targetUrl.includes('.m3u8');
+
+        // M3U8 REWRITING LOGIC
+        if (isM3u8) {
+            const text = await response.text();
+            const baseUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
+
+            // Rewrite line by line
+            const rewritten = text.split('\n').map(line => {
+                const l = line.trim();
+                if (!l || l.startsWith('#')) return line; // Pass comments/tags unchanged
+
+                // Resolve absolute URL
+                let absoluteUrl = l;
+                if (!l.startsWith('http')) {
+                    absoluteUrl = new URL(l, baseUrl).toString();
+                }
+
+                // Wrap in relay
+                const encodedUrl = encodeURIComponent(absoluteUrl);
+                const encodedReferer = referer ? encodeURIComponent(referer) : '';
+                const encodedCookie = cookie ? encodeURIComponent(cookie) : '';
+                return `/api/relay?url=${encodedUrl}&referer=${encodedReferer}&cookie=${encodedCookie}`;
+            }).join('\n');
+
+            return new NextResponse(rewritten, {
+                status: 200,
+                headers: {
+                    'Content-Type': 'application/vnd.apple.mpegurl',
+                    'Access-Control-Allow-Origin': '*',
+                    'Cache-Control': 'no-cache, no-store, must-revalidate', // M3U8 shouldn't be cached aggressively
+                }
+            });
+        }
+
+        // STANDARD STREAMING (MP4/TS segments)
         const contentLength = response.headers.get('content-length');
         const contentRange = response.headers.get('content-range');
-
-        // Build response headers
         const responseHeaders: HeadersInit = {
-            'Content-Type': contentType,
+            'Content-Type': contentType || 'application/octet-stream', // Use the already defined contentType
             'Accept-Ranges': 'bytes',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -84,7 +120,6 @@ export async function GET(request: Request) {
         if (contentLength) responseHeaders['Content-Length'] = contentLength;
         if (contentRange) responseHeaders['Content-Range'] = contentRange;
 
-        // Stream the response
         return new NextResponse(response.body, {
             status: response.status,
             headers: responseHeaders,

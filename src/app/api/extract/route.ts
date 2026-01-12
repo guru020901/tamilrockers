@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { fetchHtmlWithBypass } from '@/lib/proxy';
+import { fetchHtmlWithBypass } from '@/lib/proxy'; // Use puppeteer instead
+import { scrapeWithPuppeteer } from '@/lib/browser';
 
 /**
  * 🕵️‍♂️ STREAM EXTRACTOR API
@@ -18,12 +19,16 @@ export async function GET(request: Request) {
     // console.log(`[API/Extract] Extracting stream from: ${url}`);
 
     try {
-        const html = await fetchHtmlWithBypass(url, new URL(url).origin);
+        // Use Puppeteer to get HTML + Cookies (Best for Luluvid etc)
+        const { html, cookies, ua } = await scrapeWithPuppeteer(url, new URL(url).origin);
 
         let streamUrl = null;
         let type = 'mp4';
+        let streamReferer = url; // Default to main page
+        const capturedCookies = cookies; // Store for response
 
-        // 0. De-obfuscate Packed Scripts (common in video players)
+
+
         // Looks for eval(function(p,a,c,k,e,d)...)
         const packedPattern = /eval\(function\(p,a,c,k,e,d\).*?\.split\('\|'\)\)\)/;
         const packedMatch = packedPattern.exec(html);
@@ -180,6 +185,7 @@ export async function GET(request: Request) {
 
                     try {
                         const iframeHtml = await fetchHtmlWithBypass(iframeUrl, new URL(iframeUrl).origin);
+                        streamReferer = iframeUrl; // Update Referer!
 
                         // Repeat search on iframe content
                         // Unpack first
@@ -232,8 +238,9 @@ export async function GET(request: Request) {
                 streamUrl,
                 type,
                 headers: {
-                    Referer: url, // Or iframe origin if deep mined
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    Referer: streamReferer, // Use correct referer (Main page OR Iframe)
+                    'User-Agent': ua || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    Cookie: capturedCookies
                 }
             });
         }

@@ -189,7 +189,8 @@ export async function GET(request: Request) {
             }
         }
 
-        // --- PROCESS MAGNETS ---
+        // --- PROCESS MAGNETS AND TORRENT FILES ---
+        // Pattern 1: Magnet links
         const magnetPattern = /magnet:\?xt=urn:btih:[a-zA-Z0-9]+[^"'\s<>)]*/gi;
         let mm;
         const allMagnets = new Set<string>();
@@ -197,8 +198,48 @@ export async function GET(request: Request) {
             allMagnets.add(mm[0]);
         }
 
+        // Pattern 2: .torrent file links - Multiple patterns for robustness
+        const allTorrentFiles: { url: string; text: string; index: number }[] = [];
+
+        // Pattern 2a: Standard anchor tag with .torrent href
+        const torrentPattern1 = /href=["']([^"']*\.torrent[^"']*)["'][^>]*>([^<]*)/gi;
+        let tf1;
+        while ((tf1 = torrentPattern1.exec(html)) !== null) {
+            if (tf1[1] && tf1[2]) {
+                allTorrentFiles.push({ url: tf1[1], text: tf1[2].trim(), index: tf1.index });
+            }
+        }
+
+        // Pattern 2b: Anchor with nested elements (get text after cleaning)
+        const torrentPattern2 = /href=["']([^"']*\.torrent[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+        let tf2: RegExpExecArray | null;
+        while ((tf2 = torrentPattern2.exec(html)) !== null) {
+            if (tf2[1]) {
+                // Clean the inner text
+                const innerText = tf2![2].replace(/<[^>]+>/g, '').trim();
+                if (innerText && !allTorrentFiles.find(t => t.url === tf2![1])) {
+                    allTorrentFiles.push({ url: tf2![1], text: innerText, index: tf2!.index });
+                }
+            }
+        }
+
+        // Pattern 2c: Direct .torrent URLs anywhere in HTML
+        const torrentPattern3 = /(https?:\/\/[^\s"'<>]+\.torrent)/gi;
+        let tf3;
+        while ((tf3 = torrentPattern3.exec(html)) !== null) {
+            const url = tf3[1];
+            if (!allTorrentFiles.find(t => t.url === url)) {
+                // Extract filename from URL for text
+                const filename = decodeURIComponent(url.split('/').pop() || 'Download');
+                allTorrentFiles.push({ url, text: filename, index: tf3.index });
+            }
+        }
+
+        console.log(`[TamilBlasters] Found ${allMagnets.size} magnets, ${allTorrentFiles.length} torrent files`);
+
         // Distribute magnets to episodes
         const episodes = Array.from(episodesMap.values());
+        console.log(`[Debug] Processing ${episodes.length} episodes. HasEpisodeMarkers: ${hasEpisodeMarkers}`);
 
         for (const episode of episodes) {
             const epNum = parseInt(episode.number);
@@ -206,6 +247,7 @@ export async function GET(request: Request) {
             // Filter magnets for this episode
             for (const magnet of allMagnets) {
                 const dn = magnet.match(/dn=([^&]+)/);
+                // console.log(`[Debug] Checking magnet: ${magnet.substring(0, 50)}... DN found: ${!!dn}`);
                 if (dn) {
                     // Normalize title: decode URL and replace non-breaking spaces/special chars
                     const title = decodeURIComponent(dn[1]).replace(/\+/g, ' ').replace(/\u00A0/g, ' ');
@@ -214,10 +256,14 @@ export async function GET(request: Request) {
                     // --- FLEXIBLE MATCHING LOGIC ---
                     let isMatch = false;
 
-                    // If Movie Mode (no episode markers): Accept all magnets
-                    if (!hasEpisodeMarkers) {
+                    // If Movie Mode (no episode markers) OR only 1 episode found: Accept all magnets
+                    // This handles cases where tokenizer finds "Episode 1" false positive in a movie, 
+                    // or for single-episode releases where magnet doesn't have EP number.
+                    if (!hasEpisodeMarkers || episodes.length === 1) {
                         isMatch = true;
+                        console.log(`[Debug] Single/Movie mode - Adding magnet: ${title.substring(0, 30)}...`);
                     } else {
+                        console.log(`[Debug] Series mode (Multi-ep) - Checking: ${title.substring(0, 30)}... vs EP${episode.number}`);
                         // Method 1: Exact Episode Match (EP01, EP 01, E01)
                         const exactPatterns = [
                             `EP${episode.number}`,     // EP01
@@ -271,6 +317,65 @@ export async function GET(request: Request) {
             // Sort torrents by quality (high to low)
             const qualOrder = { '1080p': 3, '720p': 2, '480p': 1, 'Unknown': 0 };
             episode.torrents.sort((a, b) => (qualOrder[b.quality as keyof typeof qualOrder] || 0) - (qualOrder[a.quality as keyof typeof qualOrder] || 0));
+        }
+
+        // --- PROCESS .TORRENT FILES (add to first/all episodes for movies) ---
+        for (const tf of allTorrentFiles) {
+            const text = tf.text.trim();
+            const url = tf.url;
+
+            // Skip empty links
+            if (!text || !url) continue;
+
+            // Extract quality/size from Text OR Decoded URL OR Context (Proximity Search)
+            const decodedUrl = decodeURIComponent(url);
+            // Get context (100 chars before, 300 chars after)
+            const context = html.substring(Math.max(0, tf.index - 100), Math.min(html.length, tf.index + 300)).toUpperCase();
+            const contentToSearch = (text + ' ' + decodedUrl + ' ' + context).toUpperCase(); // Include context!
+
+            let quality = 'Unknown';
+            if (contentToSearch.includes('4K') || contentToSearch.includes('2160P')) quality = '4K';
+            else if (contentToSearch.includes('1080P')) quality = '1080p';
+            else if (contentToSearch.includes('720P')) quality = '720p';
+            else if (contentToSearch.includes('480P')) quality = '480p';
+            else if (contentToSearch.includes('HQ') || contentToSearch.includes('PREDVD')) quality = 'HQ';
+
+            // Extract size from text or URL or context
+            let size = '';
+            // Match size pattern: 1.2GB, 800MB, 1.2 GB, etc.
+            const sizeMatch = contentToSearch.match(/(\d+(?:\.\d+)?)\s*(MB|GB)/i);
+            if (sizeMatch) size = `${sizeMatch[1]} ${sizeMatch[2].toUpperCase()}`;
+
+            // If text is generic or truncated, use filename from URL
+            let displayName = text;
+            if (text.length < 20 || text.includes('Click here') || text.includes('Download') || !text.includes(' - ')) {
+                const urlFilename = decodedUrl.split('/').pop() || '';
+                if (urlFilename.length > 10) {
+                    // Remove .torrent extension and cleanup
+                    displayName = urlFilename.replace(/\.torrent$/i, '').replace(/\.mkv$/i, '').replace(/\.mp4$/i, '');
+                }
+            }
+
+            // aggressive cleanup of site prefixes
+            displayName = displayName.replace(/www\.1TamilBlasters\.[a-zA-Z]+ - /gi, '')
+                .replace(/www\.[a-zA-Z0-9]+\.[a-zA-Z]+ - /gi, '')
+                .trim();
+
+            // Make URL absolute if relative
+
+            // Make URL absolute if relative
+            const absoluteUrl = url.startsWith('http') ? url : `https://www.1tamilblasters.business${url.startsWith('/') ? '' : '/'}${url}`;
+
+            // Add to first episode (for movies) or appropriate episode
+            const targetEpisode = episodes[0];
+            if (targetEpisode && !targetEpisode.torrents.find(t => t.link === absoluteUrl)) {
+                targetEpisode.torrents.push({
+                    quality,
+                    size,
+                    link: absoluteUrl,
+                    filename: displayName
+                });
+            }
         }
 
         // Sort episodes ascending
