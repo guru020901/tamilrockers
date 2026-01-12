@@ -20,12 +20,12 @@ export async function GET(request: Request) {
 
     try {
         // Use Puppeteer to get HTML + Cookies (Best for Luluvid etc)
-        const { html, cookies, ua } = await scrapeWithPuppeteer(url, new URL(url).origin);
+        let { html, cookies, ua } = await scrapeWithPuppeteer(url, new URL(url).origin);
 
         let streamUrl = null;
         let type = 'mp4';
         let streamReferer = url; // Default to main page
-        const capturedCookies = cookies; // Store for response
+        let capturedCookies = cookies; // Store for response
 
 
 
@@ -184,8 +184,14 @@ export async function GET(request: Request) {
                     console.log(`[API/Extract] Deep Mining: Following iframe to ${iframeUrl}`);
 
                     try {
-                        const iframeHtml = await fetchHtmlWithBypass(iframeUrl, new URL(iframeUrl).origin);
-                        streamReferer = iframeUrl; // Update Referer!
+                        // CRITICAL: Use Puppeteer for the iframe too, otherwise Cloudflare blocks 'fetch'
+                        const iframeScrape = await scrapeWithPuppeteer(iframeUrl, new URL(iframeUrl).origin);
+                        const iframeHtml = iframeScrape.html;
+
+                        // Update cookies/referers to the ones from the actual video host
+                        streamReferer = iframeUrl;
+                        capturedCookies = iframeScrape.cookies; // Use Luluvid cookies!
+                        ua = iframeScrape.ua;
 
                         // Repeat search on iframe content
                         // Unpack first

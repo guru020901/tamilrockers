@@ -356,9 +356,16 @@ export async function GET(request: Request) {
                 }
             }
 
+            // Fix HTML entities (common cause of regex failure)
+            displayName = displayName.replace(/&#8211;/g, '-').replace(/&ndash;/g, '-').replace(/&nbsp;/g, ' ');
+
             // aggressive cleanup of site prefixes (Handle hyphen, en-dash, em-dash)
             displayName = displayName.replace(/(www\.|https?:\/\/)[a-zA-Z0-9.-]+\.[a-z]+\s*[-–—]\s*/gi, '')
-                .trim();   // Make URL absolute if relative
+                .trim();
+
+            // Clean leading dashes just in case
+            if (displayName.startsWith('- ')) displayName = displayName.substring(2);
+            if (displayName.startsWith(' - ')) displayName = displayName.substring(3);   // Make URL absolute if relative
 
             // Make URL absolute if relative
             const absoluteUrl = url.startsWith('http') ? url : `https://www.1tamilblasters.business${url.startsWith('/') ? '' : '/'}${url}`;

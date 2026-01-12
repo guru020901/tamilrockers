@@ -15,7 +15,11 @@ export async function getBrowser() {
             console.log('[Browser] Chromium path:', executablePath);
 
             browser = await puppeteer.launch({
-                args: [...chromium.default.args, `--user-agent=${USER_AGENT}`],
+                args: [
+                    ...chromium.default.args,
+                    `--user-agent=${USER_AGENT}`,
+                    '--disable-blink-features=AutomationControlled'
+                ],
                 defaultViewport: { width: 1280, height: 720 },
                 executablePath: executablePath,
                 headless: true,
@@ -33,7 +37,12 @@ export async function getBrowser() {
             const localPuppeteer = require('puppeteer');
             browser = await localPuppeteer.launch({
                 headless: "new",
-                args: ['--no-sandbox', '--disable-setuid-sandbox', `--user-agent=${USER_AGENT}`]
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    `--user-agent=${USER_AGENT}`,
+                    '--disable-blink-features=AutomationControlled'
+                ]
             });
             console.log('[Browser] Launched locally with puppeteer');
         } catch (e: any) {
@@ -41,7 +50,12 @@ export async function getBrowser() {
             browser = await puppeteer.launch({
                 channel: 'chrome',
                 headless: true,
-                args: ['--no-sandbox', '--disable-setuid-sandbox', `--user-agent=${USER_AGENT}`]
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    `--user-agent=${USER_AGENT}`,
+                    '--disable-blink-features=AutomationControlled'
+                ]
             });
             console.log('[Browser] Launched locally with puppeteer-core');
         }
