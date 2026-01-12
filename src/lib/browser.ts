@@ -62,8 +62,8 @@ export async function scrapeWithPuppeteer(url: string, referer?: string) {
             'Referer': referer || url
         });
 
-        // Navigate with robust waiting (Fastest possible for Vercel)
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 9000 });
+        // Navigate with robust waiting (domcontentloaded is faster and sufficient for initial challenge detection)
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
 
         // Cloudflare/Turnstile Solver
         try {

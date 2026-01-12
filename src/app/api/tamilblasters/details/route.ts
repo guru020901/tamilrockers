@@ -329,15 +329,15 @@ export async function GET(request: Request) {
 
             // Extract quality/size from Text OR Decoded URL OR Context (Proximity Search)
             const decodedUrl = decodeURIComponent(url);
-            // Get context (100 chars before, 300 chars after)
-            const context = html.substring(Math.max(0, tf.index - 100), Math.min(html.length, tf.index + 300)).toUpperCase();
+            // Get context (wider range for movies: 200 chars before, 600 chars after)
+            const context = html.substring(Math.max(0, tf.index - 200), Math.min(html.length, tf.index + 600)).toUpperCase();
             const contentToSearch = (text + ' ' + decodedUrl + ' ' + context).toUpperCase(); // Include context!
 
             let quality = 'Unknown';
             if (contentToSearch.includes('4K') || contentToSearch.includes('2160P')) quality = '4K';
-            else if (contentToSearch.includes('1080P')) quality = '1080p';
-            else if (contentToSearch.includes('720P')) quality = '720p';
-            else if (contentToSearch.includes('480P')) quality = '480p';
+            else if (contentToSearch.includes('1080P') || contentToSearch.includes('FHD')) quality = '1080p';
+            else if (contentToSearch.includes('720P') || contentToSearch.includes('HD')) quality = '720p';
+            else if (contentToSearch.includes('480P') || contentToSearch.includes('SD')) quality = '480p';
             else if (contentToSearch.includes('HQ') || contentToSearch.includes('PREDVD')) quality = 'HQ';
 
             // Extract size from text or URL or context
@@ -356,17 +356,10 @@ export async function GET(request: Request) {
                 }
             }
 
-            // Decode HTML entities in filename
-            displayName = displayName.replace(/&#8211;/g, '-')
-                .replace(/&ndash;/g, '-')
-                .replace(/&#x2013;/g, '-')
-                .replace(/&amp;/g, '&')
-                .replace(/&#038;/g, '&');
+            // aggressive cleanup of site prefixes (Handle hyphen, en-dash, em-dash)
+            displayName = displayName.replace(/(www\.|https?:\/\/)[a-zA-Z0-9.-]+\.[a-z]+\s*[-–—]\s*/gi, '')
+                .trim();   // Make URL absolute if relative
 
-            // aggressive cleanup of site prefixes
-            displayName = displayName.replace(/www\.1TamilBlasters\.[a-zA-Z]+\s*[-–]\s*/gi, '')
-                .replace(/www\.[a-zA-Z0-9]+\.[a-zA-Z]+\s*[-–]\s*/gi, '')
-                .trim();
             // Make URL absolute if relative
             const absoluteUrl = url.startsWith('http') ? url : `https://www.1tamilblasters.business${url.startsWith('/') ? '' : '/'}${url}`;
 
