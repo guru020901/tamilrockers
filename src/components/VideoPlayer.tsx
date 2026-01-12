@@ -698,12 +698,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                             </div>
                         ) : (
                             <iframe
-                                src={watch}
-                                style={{ width: '100%', height: '100%', border: 'none', pointerEvents: adShieldActive ? 'none' : 'auto' }}
+                                key={`${effectiveWatch}-${selectedEpisodeIndex}-${selectedPlayerIndex}`}
+                                src={effectiveWatch}
+                                style={{ width: '100%', height: '100%', border: 'none', pointerEvents: adShieldActive ? 'none' : 'auto', background: '#000' }}
                                 allowFullScreen
-                                allow="autoplay; fullscreen; encrypted-media"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                                 referrerPolicy="no-referrer"
-                                onError={handleIframeError}
+                                loading="eager"
+                                onError={() => setIframeError(true)}
                             />
                         )}
                     </div>
