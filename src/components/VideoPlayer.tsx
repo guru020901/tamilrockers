@@ -122,8 +122,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                 if (attempt < 3) {
                     setTimeout(() => extractStream(attempt + 1), 1000 * attempt);
                 } else {
-                    console.log('[Turbo Extraction] All attempts failed, staying on Direct mode');
+                    console.log('[Turbo Extraction] All attempts failed, falling back to iframe mode');
                     setIsExtracting(false);
+                    setMode('native-direct'); // CRITICAL: Fall back to iframe embed
                 }
             };
 
@@ -527,7 +528,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
             <div style={{ position: 'relative', width: '100%', height: isFullscreen ? '100%' : 'auto', aspectRatio: isFullscreen ? 'auto' : '16/9', background: '#000' }}>
 
                 {/* NATIVE CLEAN MODE - Direct extracted stream logic */}
-                {mode === 'native-clean' && (
+                {mode === 'native-clean' && cleanUrl && (
                     <div
                         style={{ width: '100%', height: '100%', position: 'relative', background: '#000', cursor: showControls ? 'default' : 'none', touchAction: 'none' }}
                         onDoubleClick={toggleFullscreen}
