@@ -73,6 +73,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
     // Native Clean State
     const [cleanUrl, setCleanUrl] = useState<string>('');
     const [cleanType, setCleanType] = useState<string>('');
+    const [cleanReferer, setCleanReferer] = useState<string>(''); // Store correct referer
     const [isExtracting, setIsExtracting] = useState(false);
     const playerRef = useRef<HTMLVideoElement>(null);
 
@@ -86,6 +87,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
     useEffect(() => {
         setCleanUrl('');
         setCleanType('');
+        setCleanReferer('');
         setIframeError(false);
         setSelectedPlayerIndex(0); // Reset to first player
     }, [selectedEpisodeIndex]);
@@ -107,6 +109,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                         console.log('[Turbo Extraction] SUCCESS:', data.streamUrl);
                         setCleanUrl(data.streamUrl);
                         setCleanType(data.type);
+                        // Use header referer if available, else fall back to watch URL
+                        setCleanReferer(data.headers?.Referer || watch || '');
                         setMode('native-clean');
                         return; // Success - stop retrying
                     }
@@ -561,7 +565,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                         {cleanType === 'hls' ? (
                             <ReactHlsPlayer
                                 playerRef={playerRef as any}
-                                src={`/api/relay?url=${encodeURIComponent(cleanUrl)}&referer=${encodeURIComponent(watch || '')}`}
+                                src={`/api/relay?url=${encodeURIComponent(cleanUrl)}&referer=${encodeURIComponent(cleanReferer)}`}
                                 autoPlay
                                 controls={showControls}
                                 width="100%"
@@ -602,7 +606,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                         ) : (
                             <video
                                 ref={playerRef}
-                                src={`/api/relay?url=${encodeURIComponent(cleanUrl)}&referer=${encodeURIComponent(watch || '')}`}
+                                src={`/api/relay?url=${encodeURIComponent(cleanUrl)}&referer=${encodeURIComponent(cleanReferer)}`}
                                 controls={showControls}
                                 autoPlay
                                 preload="auto"

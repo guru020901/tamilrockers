@@ -242,6 +242,25 @@ export async function GET(request: Request) {
             ? episodes[0].players[0].url
             : null;
 
+        // PRIORITIZATION: Sort players to prefer known working ones (Luluvid, etc.)
+        const PREFERRED_DOMAINS = ['luluvid', 'pstream', 'streamtape'];
+        const LOW_PRIORITY_DOMAINS = ['hglink', 'guxhag'];
+
+        const getScore = (url: string) => {
+            if (PREFERRED_DOMAINS.some(d => url.includes(d))) return 2;
+            if (LOW_PRIORITY_DOMAINS.some(d => url.includes(d))) return 0;
+            return 1;
+        };
+
+        for (const ep of episodes) {
+            ep.players.sort((a, b) => getScore(b.url) - getScore(a.url));
+        }
+
+        // Update watch URL to reflect the new first player
+        const optimizedWatch = episodes.length > 0 && episodes[0].players.length > 0
+            ? episodes[0].players[0].url
+            : watch;
+
         console.log(`[API/TamilBlasters/Details] Built ${episodes.length} episodes`);
 
         return NextResponse.json({
@@ -249,7 +268,7 @@ export async function GET(request: Request) {
             data: {
                 metadata,
                 poster,
-                watch,
+                watch: optimizedWatch,
                 episodes: episodes.length > 0 ? episodes : undefined,
                 isSeriesFormat: episodes.length > 1,
             }

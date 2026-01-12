@@ -52,8 +52,9 @@ export async function GET(request: Request) {
         // Filemoon / Vidmoly / Streamwish often hide links in specific variables
         const providerPatterns = [
             /window\.s\s*=\s*['"]([^'"]+)['"]/, // Common formatted string
-            /jwplayer\("vplayer"\)\.setup\({[\s\S]*?file:\s*"([^"]+)"/, // JWPlayer setup
-            /new\s+Playerjs\({[\s\S]*?file:\s*"([^"]+)"/, // PlayerJS
+            /jwplayer\("vplayer"\)\.setup\({[\s\S]*?file:\s*["']([^"']+)["']/, // JWPlayer setup (standard)
+            /sources:\s*\[\s*{[\s\S]*?file:\s*["']([^"']+)["']/, // JWPlayer setup (sources array)
+            /new\s+Playerjs\({[\s\S]*?file:\s*["']([^"']+)["']/, // PlayerJS
         ];
 
         // Merge patterns
