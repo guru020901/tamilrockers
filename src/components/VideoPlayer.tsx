@@ -106,6 +106,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                     const data = await res.json();
 
                     if (data.success && data.streamUrl) {
+                        // 🚨 SECURITY CHECK: Some providers (Luluvid/tnmr.org) aggressively block proxies/cors.
+                        // If we detect these, we must ABORT extraction and use the iframe.
+                        const BLOCKED_DOMAINS = ['tnmr.org', 'luluvid.net'];
+                        if (BLOCKED_DOMAINS.some(d => data.streamUrl.includes(d))) {
+                            console.warn('[Turbo Extraction] URL detected as BLOCKED (403/CORS). Forcing native iframe.');
+                            throw new Error('Blocked Domain - Force Iframe');
+                        }
+
                         console.log('[Turbo Extraction] SUCCESS:', data.streamUrl);
                         setCleanUrl(data.streamUrl);
                         setCleanType(data.type);
@@ -364,15 +372,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
 
             {/* Episode Selector (for series content) */}
             {episodes && episodes.length > 1 && !isFullscreen && (
-                <div style={{
-                    display: 'flex', alignItems: 'center', gap: '10px',
-                    padding: '12px 15px', background: '#0d0d1a',
-                    borderBottom: '1px solid #2a2a4a'
+                <div className="player-cloud-header" style={{
+                    display: 'flex', alignItems: 'center', gap: '15px',
+                    padding: '12px 20px', background: '#0f0f1a', borderBottom: '1px solid #333'
                 }}>
-                    <span style={{ color: '#888', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                    <span className="player-label" style={{ color: '#888', fontSize: '0.85rem', fontWeight: 'bold' }}>
                         📺 Episode:
                     </span>
                     <select
+                        className="player-ep-select"
                         value={selectedEpisodeIndex}
                         onChange={(e) => setSelectedEpisodeIndex(Number(e.target.value))}
                         style={{
@@ -390,31 +398,46 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                         ))}
                     </select>
 
+                    {/* Mobile Styles */}
+                    <style>{`
+                        @media (max-width: 600px) {
+                            .player-cloud-header { flex-direction: column; gap: 10px; align-items: flex-start !important; }
+                            .player-ep-select { width: 100%; }
+                            .player-nav-btn { flex: 1; text-align: center; }
+                            .player-label { display: none; }
+                            .player-badge { font-size: 0.7rem !important; padding: 4px 8px !important; }
+                        }
+                    `}</style>
+
                     {/* Quick Nav Buttons */}
-                    <button
-                        onClick={() => setSelectedEpisodeIndex(Math.max(0, selectedEpisodeIndex - 1))}
-                        disabled={selectedEpisodeIndex === 0}
-                        style={{
-                            background: selectedEpisodeIndex === 0 ? '#333' : '#7c3aed',
-                            color: '#fff', border: 'none', borderRadius: '6px',
-                            padding: '8px 12px', cursor: selectedEpisodeIndex === 0 ? 'not-allowed' : 'pointer',
-                            fontWeight: 'bold'
-                        }}
-                    >
-                        ← Prev
-                    </button>
-                    <button
-                        onClick={() => setSelectedEpisodeIndex(Math.min(episodes.length - 1, selectedEpisodeIndex + 1))}
-                        disabled={selectedEpisodeIndex === episodes.length - 1}
-                        style={{
-                            background: selectedEpisodeIndex === episodes.length - 1 ? '#333' : '#7c3aed',
-                            color: '#fff', border: 'none', borderRadius: '6px',
-                            padding: '8px 12px', cursor: selectedEpisodeIndex === episodes.length - 1 ? 'not-allowed' : 'pointer',
-                            fontWeight: 'bold'
-                        }}
-                    >
-                        Next →
-                    </button>
+                    <div style={{ display: 'flex', gap: '8px', width: 'auto' }}>
+                        <button
+                            className="player-nav-btn"
+                            onClick={() => setSelectedEpisodeIndex(Math.max(0, selectedEpisodeIndex - 1))}
+                            disabled={selectedEpisodeIndex === 0}
+                            style={{
+                                background: selectedEpisodeIndex === 0 ? '#333' : '#7c3aed',
+                                color: '#fff', border: 'none', borderRadius: '6px',
+                                padding: '8px 12px', cursor: selectedEpisodeIndex === 0 ? 'not-allowed' : 'pointer',
+                                fontWeight: 'bold'
+                            }}
+                        >
+                            ← Prev
+                        </button>
+                        <button
+                            className="player-nav-btn"
+                            onClick={() => setSelectedEpisodeIndex(Math.min(episodes.length - 1, selectedEpisodeIndex + 1))}
+                            disabled={selectedEpisodeIndex === episodes.length - 1}
+                            style={{
+                                background: selectedEpisodeIndex === episodes.length - 1 ? '#333' : '#7c3aed',
+                                color: '#fff', border: 'none', borderRadius: '6px',
+                                padding: '8px 12px', cursor: selectedEpisodeIndex === episodes.length - 1 ? 'not-allowed' : 'pointer',
+                                fontWeight: 'bold'
+                            }}
+                        >
+                            Next →
+                        </button>
+                    </div>
 
                     {/* Player Selector */}
                     {currentEpisode && currentEpisode.players && currentEpisode.players.length > 1 && (
