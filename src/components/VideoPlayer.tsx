@@ -439,36 +439,79 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                         </button>
                     </div>
 
-                    {/* Player Selector - Always visible when multiple players */}
+                    {/* 🚀 ADVANCED PLAYER SELECTOR - Premium UI with Animations */}
                     {currentEpisode && currentEpisode.players && currentEpisode.players.length > 1 && (
                         <div style={{
-                            display: 'flex', alignItems: 'center', gap: '8px',
+                            display: 'flex', alignItems: 'center', gap: '10px',
                             marginLeft: 'auto', paddingLeft: '15px', borderLeft: '1px solid #333',
                             flexWrap: 'wrap'
                         }}>
-                            <span style={{ color: '#888', fontSize: '0.85rem' }}>🎬 Server:</span>
+                            <style>{`
+                                @keyframes pulse-glow {
+                                    0%, 100% { box-shadow: 0 0 5px rgba(0, 201, 255, 0.5); }
+                                    50% { box-shadow: 0 0 20px rgba(0, 201, 255, 0.8), 0 0 30px rgba(146, 254, 157, 0.4); }
+                                }
+                                .server-btn { transition: all 0.3s ease; transform: scale(1); }
+                                .server-btn:hover { transform: scale(1.05); }
+                                .server-btn-active { animation: pulse-glow 2s infinite; }
+                            `}</style>
+                            <span style={{
+                                color: '#00C9FF', fontSize: '0.85rem', fontWeight: 'bold',
+                                display: 'flex', alignItems: 'center', gap: '5px'
+                            }}>
+                                ⚡ Server:
+                            </span>
                             {currentEpisode.players.map((player, idx) => {
-                                // Identify server name from URL
+                                // Identify server details from URL
                                 let serverName = `Server ${idx + 1}`;
-                                if (player.url.includes('luluvid')) serverName = 'Luluvid';
-                                else if (player.url.includes('hglink')) serverName = 'HGLink';
-                                else if (player.url.includes('streamtape')) serverName = 'Streamtape';
+                                let serverIcon = '🎬';
+                                let serverColor = '#6b7280';
+
+                                if (player.url.includes('luluvid')) {
+                                    serverName = 'Luluvid';
+                                    serverIcon = '🟢';
+                                    serverColor = '#10b981';
+                                } else if (player.url.includes('hglink')) {
+                                    serverName = 'HGLink';
+                                    serverIcon = '🔵';
+                                    serverColor = '#3b82f6';
+                                } else if (player.url.includes('streamtape')) {
+                                    serverName = 'Streamtape';
+                                    serverIcon = '🟡';
+                                    serverColor = '#f59e0b';
+                                } else if (player.url.includes('dood')) {
+                                    serverName = 'DoodStream';
+                                    serverIcon = '🟣';
+                                    serverColor = '#8b5cf6';
+                                }
+
+                                const isActive = selectedPlayerIndex === idx;
 
                                 return (
                                     <button
                                         key={idx}
+                                        className={`server-btn ${isActive ? 'server-btn-active' : ''}`}
                                         onClick={() => setSelectedPlayerIndex(idx)}
                                         style={{
-                                            background: selectedPlayerIndex === idx
-                                                ? 'linear-gradient(135deg, #00C9FF, #92FE9D)'
-                                                : '#2a2a2a',
-                                            color: selectedPlayerIndex === idx ? '#000' : '#fff',
-                                            border: 'none', borderRadius: '6px',
-                                            padding: '6px 12px', fontWeight: 'bold',
-                                            cursor: 'pointer', fontSize: '0.85rem'
+                                            background: isActive
+                                                ? `linear-gradient(135deg, ${serverColor}, ${serverColor}88)`
+                                                : 'linear-gradient(135deg, #1f1f2e, #2a2a3e)',
+                                            color: '#fff',
+                                            border: isActive ? `2px solid ${serverColor}` : '2px solid #333',
+                                            borderRadius: '8px',
+                                            padding: '8px 16px',
+                                            fontWeight: 'bold',
+                                            cursor: 'pointer',
+                                            fontSize: '0.9rem',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            boxShadow: isActive ? `0 4px 15px ${serverColor}44` : 'none',
                                         }}
                                     >
-                                        {serverName}
+                                        <span>{serverIcon}</span>
+                                        <span>{serverName}</span>
+                                        {isActive && <span style={{ fontSize: '0.7rem', opacity: 0.8 }}>▶</span>}
                                     </button>
                                 );
                             })}
@@ -609,31 +652,58 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                                 onWaiting={onWaiting}
                                 onPlaying={onPlaying}
                                 hlsConfig={{
-                                    // 🚀 ULTRA-FAST STREAMING CONFIG
+                                    // ⚡ ULTRA-FAST ENTERPRISE-GRADE STREAMING CONFIG ⚡
+
+                                    // === INSTANT STARTUP ===
                                     autoStartLoad: true,
-                                    startLevel: -1, // Auto-detect best starting quality
+                                    startLevel: 0, // Start with lowest quality for INSTANT playback
                                     capLevelToPlayerSize: true,
-                                    enableWorker: true, // Multithreaded decoding
-                                    lowLatencyMode: false, // Prioritize buffer over latency
+                                    startPosition: -1, // Start from live edge
 
-                                    // AGGRESSIVE BUFFERING (Prevents stalling)
-                                    maxBufferLength: 60, // 60s forward buffer
-                                    maxMaxBufferLength: 1200, // Up to 20 mins buffered
-                                    maxBufferHole: 0.5,
-                                    backBufferLength: 180, // 3 mins backward buffer
+                                    // === MULTITHREADED DECODING ===
+                                    enableWorker: true, // Web Worker for HLS parsing (faster)
 
-                                    // FAST STARTUP
-                                    manifestLoadingTimeOut: 10000,
-                                    manifestLoadingMaxRetry: 4,
-                                    levelLoadingTimeOut: 10000,
-                                    fragLoadingTimeOut: 20000,
-                                    fragLoadingMaxRetry: 6,
+                                    // === LOW LATENCY MODE ===
+                                    lowLatencyMode: true, // Minimize delay
 
-                                    // ABR OPTIMIZATION
-                                    abrEwmaFastLive: 3,
-                                    abrEwmaSlowLive: 9,
-                                    abrBandWidthFactor: 0.95,
-                                    abrBandWidthUpFactor: 0.7,
+                                    // === AGGRESSIVE PRE-BUFFERING (Zero Stall) ===
+                                    maxBufferLength: 120, // 2 mins forward buffer
+                                    maxMaxBufferLength: 600, // Max 10 mins (for slow networks)
+                                    maxBufferSize: 120 * 1000 * 1000, // 120MB buffer
+                                    maxBufferHole: 0.1, // Tiny gap tolerance
+                                    backBufferLength: 90, // 1.5 mins backward (for rewind)
+
+                                    // === ULTRA-FAST FRAGMENT LOADING ===
+                                    manifestLoadingTimeOut: 5000, // 5s manifest timeout
+                                    manifestLoadingMaxRetry: 6,
+                                    manifestLoadingRetryDelay: 500, // Fast retry
+                                    levelLoadingTimeOut: 5000,
+                                    levelLoadingMaxRetry: 6,
+                                    levelLoadingRetryDelay: 500,
+                                    fragLoadingTimeOut: 10000, // 10s per fragment
+                                    fragLoadingMaxRetry: 8,
+                                    fragLoadingRetryDelay: 500,
+
+                                    // === SMART ABR (Adaptive Bitrate) ===
+                                    abrEwmaFastLive: 2, // Fast bandwidth estimation
+                                    abrEwmaSlowLive: 6,
+                                    abrEwmaFastVoD: 3,
+                                    abrEwmaSlowVoD: 9,
+                                    abrEwmaDefaultEstimate: 5000000, // Assume 5Mbps initially
+                                    abrBandWidthFactor: 0.9, // Conservative downgrade
+                                    abrBandWidthUpFactor: 0.8, // Faster upgrade
+                                    abrMaxWithRealBitrate: true, // Use real bitrate for decisions
+
+                                    // === STALL PREVENTION ===
+                                    nudgeOffset: 0.1,
+                                    nudgeMaxRetry: 5,
+
+                                    // === PREFETCH NEXT SEGMENT ===
+                                    maxFragLookUpTolerance: 0.25,
+                                    initialLiveManifestSize: 3,
+
+                                    // === ADVANCED ERROR RECOVERY ===
+                                    appendErrorMaxRetry: 5,
                                 }}
                             />
                         ) : (
