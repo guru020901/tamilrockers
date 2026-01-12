@@ -103,11 +103,12 @@ export async function GET(request: Request) {
 
         // 1. Find Episode Tokens
         // Patterns: "Episode - 01", "EP01", "Episode 1", "S01EP01"
+        // Note: HTML entities &#8211; (en-dash) and &ndash; are also handled
         const epPatterns = [
-            /Episode\s*[-–]\s*(\d+)/gi,
-            /\bEP[-\s]*(\d+)/gi,
-            /Episode\s+(\d+)/gi,
-            /S\d+EP(\d+)/gi
+            /Episode\s*(?:[-–]|&#8211;|&ndash;|&#x2013;)\s*(\d+)/gi, // Episode – 17
+            /\bEP[-\s]*(\d+)/gi,           // EP17, EP 17
+            /Episode\s+(\d+)/gi,           // Episode 17
+            /S\d+EP(\d+)/gi                // S01EP17
         ];
         for (const pattern of epPatterns) {
             let m;
@@ -125,8 +126,8 @@ export async function GET(request: Request) {
             tokens.push({ type: 'PLAYER', index: pm.index, value: pm[1] });
         }
 
-        // 3. Find Iframe Tokens
-        const iframePattern = /<iframe[^>]*src="([^"]+)"/gi;
+        // 3. Find Iframe Tokens (Robust: handles IFRAME/iframe, SRC/src, quoted/unquoted)
+        const iframePattern = /<iframe[^>]*\s+src\s*=\s*["']?([^"'\s>]+)/gi;
         let im;
         while ((im = iframePattern.exec(html)) !== null) {
             const src = im[1];
@@ -200,20 +201,55 @@ export async function GET(request: Request) {
         const episodes = Array.from(episodesMap.values());
 
         for (const episode of episodes) {
+            const epNum = parseInt(episode.number);
+
             // Filter magnets for this episode
             for (const magnet of allMagnets) {
                 const dn = magnet.match(/dn=([^&]+)/);
                 if (dn) {
-                    const title = decodeURIComponent(dn[1]).replace(/\+/g, ' ');
+                    // Normalize title: decode URL and replace non-breaking spaces/special chars
+                    const title = decodeURIComponent(dn[1]).replace(/\+/g, ' ').replace(/\u00A0/g, ' ');
+                    const titleUpper = title.toUpperCase();
 
-                    // Match Logic:
+                    // --- FLEXIBLE MATCHING LOGIC ---
+                    let isMatch = false;
+
                     // If Movie Mode (no episode markers): Accept all magnets
-                    // If Series Mode: Check if filename contains "EP{num}" or "E{num}"
-                    const isMatch = !hasEpisodeMarkers ||
-                        title.toUpperCase().includes(`EP${episode.number}`) ||
-                        title.toUpperCase().includes(`E${episode.number}`) ||
-                        title.toUpperCase().includes(`EP ${episode.number}`) ||
-                        title.toUpperCase().includes(`EP-${episode.number}`); // Added EP-01 support
+                    if (!hasEpisodeMarkers) {
+                        isMatch = true;
+                    } else {
+                        // Method 1: Exact Episode Match (EP01, EP 01, E01)
+                        const exactPatterns = [
+                            `EP${episode.number}`,     // EP01
+                            `EP ${episode.number}`,    // EP 01
+                            `EP-${episode.number}`,    // EP-01
+                            `E${episode.number}`,      // E01
+                        ];
+                        if (exactPatterns.some(p => titleUpper.includes(p))) {
+                            isMatch = true;
+                        }
+
+                        // Method 2: Range Match (EP (01-08), EP(09-11), EP01-08)
+                        if (!isMatch) {
+                            const rangePatterns = [
+                                /EP\s*\(?(\d+)[-–](\d+)\)?/gi, // EP (01-08) or EP01-08
+                                /S\d+\s*EP\s*\(?(\d+)[-–](\d+)\)?/gi, // S01 EP (15-16)
+                            ];
+                            for (const pattern of rangePatterns) {
+                                pattern.lastIndex = 0; // Reset global regex
+                                let rangeMatch;
+                                while ((rangeMatch = pattern.exec(titleUpper)) !== null) {
+                                    const start = parseInt(rangeMatch[1]);
+                                    const end = parseInt(rangeMatch[2]);
+                                    if (epNum >= start && epNum <= end) {
+                                        isMatch = true;
+                                        break;
+                                    }
+                                }
+                                if (isMatch) break;
+                            }
+                        }
+                    }
 
                     if (isMatch) {
                         let quality = 'Unknown';
@@ -225,7 +261,10 @@ export async function GET(request: Request) {
                         const sizeMatch = title.match(/(\d+(?:\.\d+)?)\s*(MB|GB)/i);
                         if (sizeMatch) size = `${sizeMatch[1]} ${sizeMatch[2].toUpperCase()}`;
 
-                        episode.torrents.push({ quality, size, link: magnet, filename: title });
+                        // Avoid adding duplicate magnets
+                        if (!episode.torrents.find(t => t.link === magnet)) {
+                            episode.torrents.push({ quality, size, link: magnet, filename: title });
+                        }
                     }
                 }
             }
