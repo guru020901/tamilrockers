@@ -3,15 +3,15 @@ import { fetchHtmlWithBypass } from '@/lib/proxy';
 import { getDomain } from '@/lib/config';
 
 /**
- * 🚀 ADVANCED 1TamilBlasters Details Scraper v4
+ * 🚀 ADVANCED 1TamilBlasters Details Scraper v5 (Tokenizer Edition)
  * 
  * Architecture Analysis (1TamilBlasters):
- * - Episodes: Marked as "EP11", "EP10" (NOT "Episode – 11")
- * - Players: Multiple players per movie/episode ("Player: 01", "Player: 02")
- * - Video Embeds: Multiple iframes in descending order
- * - Torrents: Magnet links (not .torrent files)
+ * - Structure is interleaved: Episode markers, Player labels, and Iframes appear in reading order.
+ * - Series: "Episode 01" -> "Player 01" -> Iframe -> "Player 02" -> Iframe -> "Episode 02" ...
+ * - Movies: "Player 01" -> Iframe -> "Player 02" -> Iframe ...
  * 
- * Strategy: Extract all iframes, detect Player labels, group by episode/player
+ * Strategy: Tokenize HTML (mark positions of Episodes, Players, Iframes), sort by index, 
+ * and use a State Machine to group them contextually.
  */
 
 interface TorrentLink {
@@ -29,7 +29,7 @@ interface Player {
 interface Episode {
     number: string;
     title: string;
-    players: Player[]; // Multiple players per episode
+    players: Player[];
     torrents: TorrentLink[];
 }
 
@@ -58,7 +58,6 @@ export async function GET(request: Request) {
 
         // --- EXTRACT SERIES METADATA ---
         const metadata: SeriesMetadata = {};
-
         const seriesNameMatch = html.match(/Series\s*Name:\s*<\/strong>\s*([^<]+)/i) ||
             html.match(/<h1[^>]*>([^<]+)<\/h1>/i) ||
             html.match(/<title>([^<|]+)/i);
@@ -83,7 +82,6 @@ export async function GET(request: Request) {
             /<img[^>]*src="([^"]+)"[^>]*class="[^"]*wp-post-image[^"]*"/i,
             /<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i,
         ];
-
         for (const pattern of posterPatterns) {
             const posterMatch = pattern.exec(html);
             if (posterMatch) {
@@ -92,145 +90,154 @@ export async function GET(request: Request) {
             }
         }
 
-        // --- STEP 1: DETECT PLAYER LABELS AND EXTRACT IFRAMES ---
-        // Look for "Player: 01", "Player 02", "Player: 1" patterns and associate with following iframe
-        const playerSections: { playerNum: number; iframeSrc: string }[] = [];
+        // --- ROBUST TOKENIZER & STATE MACHINE PARSING ---
+        // We identify "Tokens" in the HTML and process them in order to capture structure
 
-        // Pattern to find Player labels followed by iframes
-        const playerIframePattern = /Player[:.\s]*(\d+)[^<]*<[\s\S]{0,500}?<iframe[^>]*src="([^"]+)"/gi;
-        let playerMatch;
-        while ((playerMatch = playerIframePattern.exec(html)) !== null) {
-            const playerNum = parseInt(playerMatch[1]);
-            const src = playerMatch[2];
-            if (!src.includes('googlead') && !src.includes('facebook')) {
-                playerSections.push({ playerNum, iframeSrc: src });
+        interface Token {
+            type: 'EPISODE' | 'PLAYER' | 'IFRAME';
+            index: number;
+            value?: string;
+        }
+
+        const tokens: Token[] = [];
+
+        // 1. Find Episode Tokens
+        // Patterns: "Episode - 01", "EP01", "Episode 1", "S01EP01"
+        const epPatterns = [
+            /Episode\s*[-–]\s*(\d+)/gi,
+            /\bEP[-\s]*(\d+)/gi,
+            /Episode\s+(\d+)/gi,
+            /S\d+EP(\d+)/gi
+        ];
+        for (const pattern of epPatterns) {
+            let m;
+            while ((m = pattern.exec(html)) !== null) {
+                // Determine if this is likely a header
+                tokens.push({ type: 'EPISODE', index: m.index, value: m[1].padStart(2, '0') });
             }
         }
 
-        // Fallback: If no Player labels found, just extract all iframes and number them sequentially
-        if (playerSections.length === 0) {
-            const iframePattern = /<iframe[^>]*src="([^"]+)"[^>]*>/gi;
-            let iframeMatch;
-            let playerNum = 1;
-            while ((iframeMatch = iframePattern.exec(html)) !== null) {
-                const src = iframeMatch[1];
-                if (!src.includes('googlead') && !src.includes('facebook') && !src.includes('twitter')) {
-                    playerSections.push({ playerNum, iframeSrc: src });
-                    playerNum++;
-                }
+        // 2. Find Player Tokens
+        // Patterns: "Player: 01", "Player 02"
+        const playerPattern = /Player[:.\s]*(\d+)/gi;
+        let pm;
+        while ((pm = playerPattern.exec(html)) !== null) {
+            tokens.push({ type: 'PLAYER', index: pm.index, value: pm[1] });
+        }
+
+        // 3. Find Iframe Tokens
+        const iframePattern = /<iframe[^>]*src="([^"]+)"/gi;
+        let im;
+        while ((im = iframePattern.exec(html)) !== null) {
+            const src = im[1];
+            if (!src.includes('googlead') && !src.includes('facebook') && !src.includes('twitter')) {
+                tokens.push({ type: 'IFRAME', index: im.index, value: src });
             }
         }
 
-        console.log(`[API/TamilBlasters/Details] Found ${playerSections.length} players`);
+        // Sort tokens by position (Critical for order)
+        tokens.sort((a, b) => a.index - b.index);
 
-        // --- STEP 2: EXTRACT EPISODE NUMBERS ---
-        const epPattern = /\bEP[-\s]?(\d+)/gi;
-        const episodeNumbers: string[] = [];
-        const seenEp = new Set<string>();
-        let epMatch;
-        while ((epMatch = epPattern.exec(html)) !== null) {
-            const num = epMatch[1].padStart(2, '0');
-            if (!seenEp.has(num)) {
-                seenEp.add(num);
-                episodeNumbers.push(num);
-            }
-        }
-        episodeNumbers.sort((a, b) => parseInt(a) - parseInt(b)); // Sort ascending EP01 -> EP11
-        console.log(`[API/TamilBlasters/Details] Found episode numbers: ${episodeNumbers.join(', ')}`);
+        // --- STATE MACHINE PROCESSING ---
+        const episodesMap = new Map<string, Episode>();
 
-        // --- STEP 3: EXTRACT ALL MAGNETS ---
-        const magnetPattern = /magnet:\?xt=urn:btih:[a-zA-Z0-9]+[^"'\s<>)]*/gi;
-        const allMagnets: string[] = [];
-        let magnetMatch;
-        while ((magnetMatch = magnetPattern.exec(html)) !== null) {
-            allMagnets.push(magnetMatch[0]);
-        }
-        const uniqueMagnets = [...new Set(allMagnets)];
-        console.log(`[API/TamilBlasters/Details] Found ${uniqueMagnets.length} unique magnets`);
+        // Initial State
+        // If we see iframes BEFORE any episode marker, they belong to "Movie" (or Episode 01 default)
+        // If we see Episode marker, we switch context.
 
-        // --- STEP 4: BUILD EPISODE/MOVIE OBJECTS ---
-        const episodes: Episode[] = [];
+        let currentEpNum = '01';
+        let currentPlayerNum = 1;
 
-        // Determine if this is a series (has episode numbers) or a movie
-        const isSeries = episodeNumbers.length > 1;
+        // Check if there are ANY episode markers. If 0, it's definitely a movie structure.
+        const hasEpisodeMarkers = tokens.some(t => t.type === 'EPISODE');
 
-        if (isSeries) {
-            // For series: Group players by episode number matching
-            for (const epNum of episodeNumbers) {
-                const episode: Episode = {
-                    number: epNum,
-                    title: `Episode ${epNum}`,
+        // Helper to get or create episode
+        const getEpisode = (num: string) => {
+            if (!episodesMap.has(num)) {
+                episodesMap.set(num, {
+                    number: num,
+                    title: hasEpisodeMarkers ? `Episode ${num}` : `Movie`,
                     players: [],
                     torrents: []
-                };
-
-                // Find matching magnets for this episode
-                for (const magnet of uniqueMagnets) {
-                    const dn = magnet.match(/dn=([^&]+)/);
-                    if (dn) {
-                        const title = decodeURIComponent(dn[1]);
-                        if (title.includes(`EP${epNum}`) || title.includes(`EP${parseInt(epNum)}`)) {
-                            let quality = 'Unknown';
-                            if (title.includes('1080p')) quality = '1080p';
-                            else if (title.includes('720p')) quality = '720p';
-                            else if (title.includes('480p')) quality = '480p';
-
-                            let size = '';
-                            const sizeMatch = title.match(/(\d+(?:\.\d+)?)\s*(MB|GB)/i);
-                            if (sizeMatch) size = `${sizeMatch[1]} ${sizeMatch[2].toUpperCase()}`;
-
-                            episode.torrents.push({ quality, size, link: magnet, filename: title.replace(/\+/g, ' ') });
-                        }
-                    }
-                }
-
-                episodes.push(episode);
+                });
             }
+            return episodesMap.get(num)!;
+        };
 
-            // Distribute players to episodes (assuming players are in episode order)
-            const playersPerEpisode = Math.ceil(playerSections.length / episodeNumbers.length);
-            for (let i = 0; i < episodes.length; i++) {
-                const startIdx = i * playersPerEpisode;
-                const endIdx = Math.min(startIdx + playersPerEpisode, playerSections.length);
-                for (let j = startIdx; j < endIdx; j++) {
-                    episodes[i].players.push({
-                        number: j - startIdx + 1,
-                        url: playerSections[j].iframeSrc
+        for (const token of tokens) {
+            if (token.type === 'EPISODE') {
+                // Switch context to new episode
+                currentEpNum = token.value!;
+                currentPlayerNum = 1; // Reset player count for new episode (unless explicit player label says otherwise)
+            } else if (token.type === 'PLAYER') {
+                // Explicit player label found
+                currentPlayerNum = parseInt(token.value!);
+            } else if (token.type === 'IFRAME') {
+                // Found a video -> Assign to current Context
+                const ep = getEpisode(currentEpNum);
+
+                // Add player to episode (avoid duplicates if any)
+                if (!ep.players.find(p => p.url === token.value)) {
+                    ep.players.push({
+                        number: currentPlayerNum,
+                        url: token.value!
                     });
+                    // Increment player num for next iframe (implicit next player)
+                    currentPlayerNum++;
                 }
-            }
-        } else {
-            // For movies: Single "episode" with all players
-            const movieEpisode: Episode = {
-                number: '01',
-                title: 'Movie',
-                players: playerSections.map((p, idx) => ({ number: p.playerNum || idx + 1, url: p.iframeSrc })),
-                torrents: []
-            };
-
-            // Add all magnets to movie
-            for (const magnet of uniqueMagnets) {
-                const dnMatch = magnet.match(/dn=([^&]+)/);
-                const title = dnMatch ? decodeURIComponent(dnMatch[1].replace(/\+/g, ' ')) : 'Unknown';
-
-                let quality = 'Unknown';
-                if (title.includes('1080p')) quality = '1080p';
-                else if (title.includes('720p')) quality = '720p';
-                else if (title.includes('480p')) quality = '480p';
-
-                let size = '';
-                const sizeMatch = title.match(/(\d+(?:\.\d+)?)\s*(MB|GB)/i);
-                if (sizeMatch) size = `${sizeMatch[1]} ${sizeMatch[2].toUpperCase()}`;
-
-                movieEpisode.torrents.push({ quality, size, link: magnet, filename: title });
-            }
-
-            if (movieEpisode.players.length > 0 || movieEpisode.torrents.length > 0) {
-                episodes.push(movieEpisode);
             }
         }
 
-        // Get first watch URL (first player of first episode)
+        // --- PROCESS MAGNETS ---
+        const magnetPattern = /magnet:\?xt=urn:btih:[a-zA-Z0-9]+[^"'\s<>)]*/gi;
+        let mm;
+        const allMagnets = new Set<string>();
+        while ((mm = magnetPattern.exec(html)) !== null) {
+            allMagnets.add(mm[0]);
+        }
+
+        // Distribute magnets to episodes
+        const episodes = Array.from(episodesMap.values());
+
+        for (const episode of episodes) {
+            // Filter magnets for this episode
+            for (const magnet of allMagnets) {
+                const dn = magnet.match(/dn=([^&]+)/);
+                if (dn) {
+                    const title = decodeURIComponent(dn[1]).replace(/\+/g, ' ');
+
+                    // Match Logic:
+                    // If Movie Mode (no episode markers): Accept all magnets
+                    // If Series Mode: Check if filename contains "EP{num}" or "E{num}"
+                    const isMatch = !hasEpisodeMarkers ||
+                        title.toUpperCase().includes(`EP${episode.number}`) ||
+                        title.toUpperCase().includes(`E${episode.number}`) ||
+                        title.toUpperCase().includes(`EP ${episode.number}`) ||
+                        title.toUpperCase().includes(`EP-${episode.number}`); // Added EP-01 support
+
+                    if (isMatch) {
+                        let quality = 'Unknown';
+                        if (title.includes('1080p')) quality = '1080p';
+                        else if (title.includes('720p')) quality = '720p';
+                        else if (title.includes('480p')) quality = '480p';
+
+                        let size = '';
+                        const sizeMatch = title.match(/(\d+(?:\.\d+)?)\s*(MB|GB)/i);
+                        if (sizeMatch) size = `${sizeMatch[1]} ${sizeMatch[2].toUpperCase()}`;
+
+                        episode.torrents.push({ quality, size, link: magnet, filename: title });
+                    }
+                }
+            }
+            // Sort torrents by quality (high to low)
+            const qualOrder = { '1080p': 3, '720p': 2, '480p': 1, 'Unknown': 0 };
+            episode.torrents.sort((a, b) => (qualOrder[b.quality as keyof typeof qualOrder] || 0) - (qualOrder[a.quality as keyof typeof qualOrder] || 0));
+        }
+
+        // Sort episodes ascending
+        episodes.sort((a, b) => parseInt(a.number) - parseInt(b.number));
+
+        // Get first watch URL
         const watch = episodes.length > 0 && episodes[0].players.length > 0
             ? episodes[0].players[0].url
             : null;
