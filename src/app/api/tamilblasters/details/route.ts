@@ -92,20 +92,38 @@ export async function GET(request: Request) {
         // --- EXTRACT EPISODES WITH TORRENTS ---
         const episodes: Episode[] = [];
 
-        // Split content by Episode headers (Episode – 11, Episode - 07, etc.)
-        const episodePattern = /Episode\s*[-–]\s*(\d+)/gi;
-        const episodeSections: string[] = [];
-        let lastIndex = 0;
-        let episodeMatch;
+        // Multi-format episode detection patterns:
+        // - "Episode – 11", "Episode - 07", "Episode 01"
+        // - "EP-01", "EP 01", "EP01"  
+        // - "S01EP01", "S02EP(01-04)" (range format)
+        const episodePatterns = [
+            /Episode\s*[-–]?\s*(\d+)/gi,     // Episode – 11, Episode - 07, Episode 01
+            /\bEP[-\s]*(\d+)/gi,              // EP-01, EP 01, EP01
+        ];
 
-        // Find all episode markers
-        const episodeMarkers: { number: string; index: number }[] = [];
-        while ((episodeMatch = episodePattern.exec(html)) !== null) {
-            episodeMarkers.push({
-                number: episodeMatch[1],
-                index: episodeMatch.index
-            });
+        // Try to find episode markers in HTML
+        let episodeMarkers: { number: string; index: number }[] = [];
+
+        for (const pattern of episodePatterns) {
+            let episodeMatch;
+            while ((episodeMatch = pattern.exec(html)) !== null) {
+                episodeMarkers.push({
+                    number: episodeMatch[1],
+                    index: episodeMatch.index
+                });
+            }
+            if (episodeMarkers.length > 0) break; // Use first matching pattern
         }
+
+        // Deduplicate and sort by position
+        const seenEpisodes = new Set<string>();
+        episodeMarkers = episodeMarkers
+            .filter(m => {
+                if (seenEpisodes.has(m.number)) return false;
+                seenEpisodes.add(m.number);
+                return true;
+            })
+            .sort((a, b) => a.index - b.index);
 
         // Extract content between episode markers
         for (let i = 0; i < episodeMarkers.length; i++) {
