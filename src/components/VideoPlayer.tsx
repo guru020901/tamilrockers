@@ -96,6 +96,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
         setSelectedPlayerIndex(0); // Reset to first player
     }, [selectedEpisodeIndex]);
 
+    // Reset clean URL when SERVER changes (enables Turbo server switching)
+    useEffect(() => {
+        setCleanUrl(''); // Clear to trigger new extraction
+        setCleanType('');
+        setCleanReferer('');
+        setCleanCookie('');
+        console.log(`[VideoPlayer] Server switched to index ${selectedPlayerIndex}, triggering re-extraction...`);
+    }, [selectedPlayerIndex]);
+
     // Effect: TURBO DIRECT - Aggressively try to extract clean stream IMMEDIATELY
     useEffect(() => {
         if (effectiveWatch && (mode === 'native-direct' || mode === 'native-clean')) {
