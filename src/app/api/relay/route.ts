@@ -51,6 +51,11 @@ export async function GET(request: Request) {
             }
         }
 
+        // CRITICAL: Add cookie if provided (enables authenticated streaming)
+        if (cookie) {
+            headers['Cookie'] = cookie;
+        }
+
         // Fetch with timeout
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout

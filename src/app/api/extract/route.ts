@@ -199,6 +199,13 @@ export async function GET(request: Request) {
                         if (deepPackedScripts) {
                             for (const script of deepPackedScripts) {
                                 const unpacked = unpack(script);
+                                // CRITICAL: Search for HLS first (most common), then MP4
+                                const deepHlsMatch = hlsPatterns.find(p => p.test(unpacked))?.exec(unpacked);
+                                if (deepHlsMatch) {
+                                    streamUrl = deepHlsMatch[1];
+                                    type = 'hls';
+                                    break;
+                                }
                                 const deepMp4Match = mp4Patterns.find(p => p.test(unpacked))?.exec(unpacked);
                                 if (deepMp4Match) {
                                     streamUrl = deepMp4Match[1];
