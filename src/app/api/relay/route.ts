@@ -19,7 +19,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const targetUrl = searchParams.get('url');
     const referer = searchParams.get('referer');
-    const cookie = searchParams.get('cookie'); // Read cookie
+    const cookie = searchParams.get('cookie');
+    const ua = searchParams.get('ua'); // Allow passing UA
 
     if (!targetUrl) {
         return new NextResponse('Missing URL parameter', { status: 400 });
@@ -29,29 +30,27 @@ export async function GET(request: Request) {
 
     try {
         const headers: Record<string, string> = {
-            'User-Agent': USER_AGENT, // Use standard UA
+            'User-Agent': ua || USER_AGENT, // Prefer passed UA
             'Accept': '*/*',
             'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'identity', // Don't accept gzip for streaming
+            'Accept-Encoding': 'identity',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'cross-site',
+            // 'Pragma': 'no-cache', // These might trigger checks too
+            // 'Cache-Control': 'no-cache', 
         };
 
-        // Pass through range header for seeking
         const rangeHeader = request.headers.get('range');
         if (rangeHeader) {
             headers['Range'] = rangeHeader;
         }
 
-        // Add referer if provided
         if (referer) {
             headers['Referer'] = referer;
-            try {
-                headers['Origin'] = new URL(referer).origin;
-            } catch (e) {
-                // Invalid referer URL, skip origin
-            }
+            // REMOVED Origin header - often causes blocks on GET if mismatched or strictly checked
         }
 
-        // CRITICAL: Add cookie if provided (enables authenticated streaming)
         if (cookie) {
             headers['Cookie'] = cookie;
         }
@@ -96,7 +95,8 @@ export async function GET(request: Request) {
                 const encodedUrl = encodeURIComponent(absoluteUrl);
                 const encodedReferer = referer ? encodeURIComponent(referer) : '';
                 const encodedCookie = cookie ? encodeURIComponent(cookie) : '';
-                return `/api/relay?url=${encodedUrl}&referer=${encodedReferer}&cookie=${encodedCookie}`;
+                const encodedUa = ua ? encodeURIComponent(ua) : '';
+                return `/api/relay?url=${encodedUrl}&referer=${encodedReferer}&cookie=${encodedCookie}&ua=${encodedUa}`;
             }).join('\n');
 
             return new NextResponse(rewritten, {

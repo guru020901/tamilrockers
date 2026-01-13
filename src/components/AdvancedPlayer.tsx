@@ -140,6 +140,16 @@ const AdvancedPlayer: React.FC<AdvancedPlayerProps> = ({
                 });
             });
 
+            // LOADING TIMEOUT: If stalling for >15s, trigger error to allow fallback
+            const timeoutId = setTimeout(() => {
+                if (videoRef.current && videoRef.current.readyState < 3) {
+                    console.warn('[AdvancedPlayer] Loading timeout (15s), triggering fallback...');
+                    onError?.(new Error('Loading timeout'));
+                }
+            }, 15000);
+
+            hls.on(Hls.Events.DESTROYING, () => clearTimeout(timeoutId));
+
             hls.on(Hls.Events.ERROR, (_, data) => {
                 if (data.fatal) {
                     // ... error handling

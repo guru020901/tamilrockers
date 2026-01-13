@@ -112,16 +112,77 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                     <ArrowLeft size={20} style={{ marginRight: '8px' }} /> Back to Search
                 </Link>
 
-                <h1 style={{ fontSize: '2rem', marginBottom: '10px' }}>{movie.title}</h1>
+                {/* Movie Info Header with Poster */}
+                <div style={{ display: 'flex', gap: '25px', marginBottom: '25px', flexWrap: 'wrap' }}>
+                    {/* Poster Image */}
+                    {movie.poster && (
+                        <div style={{ flexShrink: 0, width: '200px' }}>
+                            <img
+                                src={movie.poster}
+                                alt={movie.title}
+                                style={{
+                                    width: '100%',
+                                    borderRadius: '12px',
+                                    boxShadow: '0 8px 32px rgba(255, 87, 34, 0.3)',
+                                    border: '2px solid #333'
+                                }}
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                            />
+                        </div>
+                    )}
 
-                {/* Dynamic Quality Badge */}
-                <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-                    <span style={{ padding: '4px 12px', background: '#ff5722', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                        {movie.quality || 'HD'}
-                    </span>
-                    {movie.watch && <span style={{ padding: '4px 12px', background: '#4CAF50', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>NATIVE STREAM</span>}
+                    {/* Movie Details */}
+                    <div style={{ flex: 1, minWidth: '250px' }}>
+                        <h1 style={{ fontSize: '2rem', marginBottom: '12px', lineHeight: 1.2 }}>{movie.title}</h1>
+
+                        {/* Quality Badges */}
+                        <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', flexWrap: 'wrap' }}>
+                            <span style={{ padding: '4px 12px', background: '#ff5722', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                                {movie.quality || 'HD'}
+                            </span>
+                            {movie.watch && <span style={{ padding: '4px 12px', background: '#4CAF50', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>NATIVE STREAM</span>}
+                            {movie.metadata?.year && (
+                                <span style={{ padding: '4px 12px', background: '#7c3aed', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                                    {movie.metadata.year}
+                                </span>
+                            )}
+                            {movie.isSeriesFormat && (
+                                <span style={{ padding: '4px 12px', background: '#00e5ff', color: '#000', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                                    📺 {movie.episodes?.length || 0} Episodes
+                                </span>
+                            )}
+                        </div>
+
+                        {/* Director & Metadata */}
+                        {movie.metadata && (
+                            <div style={{ marginBottom: '15px' }}>
+                                {movie.metadata.director && (
+                                    <p style={{ margin: '5px 0', color: '#aaa', fontSize: '0.95rem' }}>
+                                        <strong style={{ color: '#fff' }}>Director:</strong> {movie.metadata.director}
+                                    </p>
+                                )}
+                                {movie.metadata.originalTitle && movie.metadata.originalTitle !== movie.title && (
+                                    <p style={{ margin: '5px 0', color: '#aaa', fontSize: '0.95rem' }}>
+                                        <strong style={{ color: '#fff' }}>Original Title:</strong> {movie.metadata.originalTitle}
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Plot Summary */}
+                        {movie.metadata?.plotSummary && (
+                            <p style={{
+                                color: '#ccc', lineHeight: '1.6', fontSize: '0.95rem',
+                                background: 'rgba(255,255,255,0.05)', padding: '12px 15px',
+                                borderRadius: '8px', borderLeft: '4px solid #ff5722'
+                            }}>
+                                {movie.metadata.plotSummary}
+                            </p>
+                        )}
+                    </div>
                 </div>
 
+                {/* Video Player */}
                 <div style={{ marginBottom: '30px' }}>
                     {/* Pass IMDB ID, MAGNET LIST, watch URL, TITLE and EPISODES for multi-episode support */}
                     <VideoPlayer
@@ -132,27 +193,6 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                         episodes={movie.episodes}
                     />
                 </div>
-
-                {/* Series Metadata (if available) */}
-                {movie.metadata && (
-                    <div style={{ background: '#1a1a2e', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
-                        {movie.metadata.director && (
-                            <p style={{ margin: '5px 0', color: '#aaa' }}>
-                                <strong style={{ color: '#fff' }}>Director:</strong> {movie.metadata.director}
-                            </p>
-                        )}
-                        {movie.metadata.originalTitle && (
-                            <p style={{ margin: '5px 0', color: '#aaa' }}>
-                                <strong style={{ color: '#fff' }}>Original Title:</strong> {movie.metadata.originalTitle}
-                            </p>
-                        )}
-                        {movie.metadata.plotSummary && (
-                            <p style={{ margin: '10px 0', color: '#ccc', lineHeight: '1.6' }}>
-                                {movie.metadata.plotSummary}
-                            </p>
-                        )}
-                    </div>
-                )}
 
                 <div style={{ background: '#1f1f1f', padding: '20px', borderRadius: '8px' }}>
                     <h2 style={{ fontSize: '1.2rem', marginBottom: '15px' }}>

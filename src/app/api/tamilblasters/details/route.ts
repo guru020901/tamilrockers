@@ -77,10 +77,12 @@ export async function GET(request: Request) {
 
         // --- EXTRACT POSTER ---
         let poster = null;
+        // Prioritize og:image (most reliable), then main post image class, then generic attachment
         const posterPatterns = [
-            /<img[^>]*class="[^"]*attachment-post-thumbnail[^"]*"[^>]*src="([^"]+)"/i,
-            /<img[^>]*src="([^"]+)"[^>]*class="[^"]*wp-post-image[^"]*"/i,
             /<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i,
+            /<img[^>]*class="[^"]*wp-post-image[^"]*"/i, // Check class presence only first (simpler)
+            /<img[^>]*src="([^"]+)"[^>]*class="[^"]*attachment-post-thumbnail[^"]*"/i,
+            /<img[^>]*class="[^"]*attachment-post-thumbnail[^"]*"[^>]*src="([^"]+)"/i,
         ];
         for (const pattern of posterPatterns) {
             const posterMatch = pattern.exec(html);
@@ -190,12 +192,35 @@ export async function GET(request: Request) {
         }
 
         // --- PROCESS MAGNETS AND TORRENT FILES ---
-        // Pattern 1: Magnet links
-        const magnetPattern = /magnet:\?xt=urn:btih:[a-zA-Z0-9]+[^"'\s<>)]*/gi;
-        let mm;
-        const allMagnets = new Set<string>();
-        while ((mm = magnetPattern.exec(html)) !== null) {
-            allMagnets.add(mm[0]);
+
+        // Pattern 1: Magnet links with text context
+        // We capture: 1. The Magnet URL, 2. The Link Text (which contains quality/size info)
+        const magnetAnchorPattern = /<a[^>]+href=["'](magnet:\?xt=urn:btih:[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+        const allMagnetsData: { url: string; text: string }[] = [];
+        const seenMagnets = new Set<string>();
+
+        let mam;
+        while ((mam = magnetAnchorPattern.exec(html)) !== null) {
+            const url = mam[1];
+            const rawText = mam[2].replace(/<[^>]+>/g, '').trim(); // Remove inner tags
+            if (url && !seenMagnets.has(url)) {
+                seenMagnets.add(url);
+                allMagnetsData.push({ url, text: rawText });
+            }
+        }
+
+        // Fallback: Find bare magnet links we might have missed (e.g. not in anchor, or complex anchor)
+        const rawMagnetPattern = /magnet:\?xt=urn:btih:[a-zA-Z0-9]+[^"'\s<>)]*/gi;
+        let rmm;
+        while ((rmm = rawMagnetPattern.exec(html)) !== null) {
+            const url = rmm[0];
+            if (!seenMagnets.has(url)) {
+                seenMagnets.add(url);
+                // Try to extract name from dn param as fallback text
+                const dnMatch = url.match(/dn=([^&]+)/);
+                const text = dnMatch ? decodeURIComponent(dnMatch[1]).replace(/\+/g, ' ') : 'Magnet Link';
+                allMagnetsData.push({ url, text });
+            }
         }
 
         // Pattern 2: .torrent file links - Multiple patterns for robustness
@@ -215,7 +240,6 @@ export async function GET(request: Request) {
         let tf2: RegExpExecArray | null;
         while ((tf2 = torrentPattern2.exec(html)) !== null) {
             if (tf2[1]) {
-                // Clean the inner text
                 const innerText = tf2![2].replace(/<[^>]+>/g, '').trim();
                 if (innerText && !allTorrentFiles.find(t => t.url === tf2![1])) {
                     allTorrentFiles.push({ url: tf2![1], text: innerText, index: tf2!.index });
@@ -229,146 +253,189 @@ export async function GET(request: Request) {
         while ((tf3 = torrentPattern3.exec(html)) !== null) {
             const url = tf3[1];
             if (!allTorrentFiles.find(t => t.url === url)) {
-                // Extract filename from URL for text
                 const filename = decodeURIComponent(url.split('/').pop() || 'Download');
                 allTorrentFiles.push({ url, text: filename, index: tf3.index });
             }
         }
 
-        console.log(`[TamilBlasters] Found ${allMagnets.size} magnets, ${allTorrentFiles.length} torrent files`);
+        console.log(`[TamilBlasters] Found ${allMagnetsData.length} magnets, ${allTorrentFiles.length} torrent files`);
 
         // Distribute magnets to episodes
         const episodes = Array.from(episodesMap.values());
         console.log(`[Debug] Processing ${episodes.length} episodes. HasEpisodeMarkers: ${hasEpisodeMarkers}`);
 
-        for (const episode of episodes) {
-            const epNum = parseInt(episode.number);
+        for (const magnetData of allMagnetsData) {
+            const magnet = magnetData.url;
+            const linkText = magnetData.text; // NOW WE HAVE THE FULL LINK TEXT!
 
-            // Filter magnets for this episode
-            for (const magnet of allMagnets) {
-                const dn = magnet.match(/dn=([^&]+)/);
-                // console.log(`[Debug] Checking magnet: ${magnet.substring(0, 50)}... DN found: ${!!dn}`);
-                if (dn) {
-                    // Normalize title: decode URL and replace non-breaking spaces/special chars
-                    const title = decodeURIComponent(dn[1]).replace(/\+/g, ' ').replace(/\u00A0/g, ' ');
-                    const titleUpper = title.toUpperCase();
+            // Decode title from magnet DN for sorting/matching logic, but use linkText for Metadata!
+            let title = linkText;
+            if (title === 'Magnet Link' || title.length < 5) {
+                // Fallback to DN if link text is useless
+                const dnMatch = magnet.match(/dn=([^&]+)/);
+                if (dnMatch) {
+                    title = decodeURIComponent(dnMatch[1]).replace(/\+/g, ' ');
+                }
+            }
 
-                    // --- FLEXIBLE MATCHING LOGIC ---
-                    let isMatch = false;
+            const titleUpper = title.toUpperCase();
 
-                    // If Movie Mode (no episode markers) OR only 1 episode found: Accept all magnets
-                    // This handles cases where tokenizer finds "Episode 1" false positive in a movie, 
-                    // or for single-episode releases where magnet doesn't have EP number.
-                    if (!hasEpisodeMarkers || episodes.length === 1) {
-                        isMatch = true;
-                        console.log(`[Debug] Single/Movie mode - Adding magnet: ${title.substring(0, 30)}...`);
-                    } else {
-                        console.log(`[Debug] Series mode (Multi-ep) - Checking: ${title.substring(0, 30)}... vs EP${episode.number}`);
-                        // Method 1: Exact Episode Match (EP01, EP 01, E01)
-                        const exactPatterns = [
-                            `EP${episode.number}`,     // EP01
-                            `EP ${episode.number}`,    // EP 01
-                            `EP-${episode.number}`,    // EP-01
-                            `E${episode.number}`,      // E01
+            // Extract Episode Number from Magnet Title
+            let epNum = -1;
+            const epMatch = titleUpper.match(/EP\s*(\d+)/) || titleUpper.match(/E(\d+)/);
+            if (epMatch) {
+                epNum = parseInt(epMatch[1]);
+            }
+
+            // REWRITE LOOP TO ITERATE EPISODES vs MAGNETS CORRECTLY
+            // Actually, we should iterate magnets and try to place them in episodes
+
+            for (const episode of episodes) {
+                const epNumber = parseInt(episode.number);
+                let isMatch = false;
+
+                if (!hasEpisodeMarkers || episodes.length === 1) {
+                    isMatch = true;
+                } else {
+                    // Check if this magnet matches this episode
+                    const exactPatterns = [`EP${episode.number}`, `EP ${episode.number}`, `E${episode.number}`];
+                    if (exactPatterns.some(p => titleUpper.includes(p))) isMatch = true;
+
+                    if (!isMatch && epNum === epNumber) isMatch = true;
+
+                    // Method 2: Range Match (EP (01-08), EP(09-11), EP01-08)
+                    if (!isMatch) {
+                        const rangePatterns = [
+                            /EP\s*\(?(\d+)[-–](\d+)\)?/gi, // EP (01-08) or EP01-08
+                            /S\d+\s*EP\s*\(?(\d+)[-–](\d+)\)?/gi, // S01 EP (15-16)
                         ];
-                        if (exactPatterns.some(p => titleUpper.includes(p))) {
-                            isMatch = true;
-                        }
-
-                        // Method 2: Range Match (EP (01-08), EP(09-11), EP01-08)
-                        if (!isMatch) {
-                            const rangePatterns = [
-                                /EP\s*\(?(\d+)[-–](\d+)\)?/gi, // EP (01-08) or EP01-08
-                                /S\d+\s*EP\s*\(?(\d+)[-–](\d+)\)?/gi, // S01 EP (15-16)
-                            ];
-                            for (const pattern of rangePatterns) {
-                                pattern.lastIndex = 0; // Reset global regex
-                                let rangeMatch;
-                                while ((rangeMatch = pattern.exec(titleUpper)) !== null) {
-                                    const start = parseInt(rangeMatch[1]);
-                                    const end = parseInt(rangeMatch[2]);
-                                    if (epNum >= start && epNum <= end) {
-                                        isMatch = true;
-                                        break;
-                                    }
+                        for (const pattern of rangePatterns) {
+                            pattern.lastIndex = 0; // Reset global regex
+                            let rangeMatch;
+                            while ((rangeMatch = pattern.exec(titleUpper)) !== null) {
+                                const start = parseInt(rangeMatch[1]);
+                                const end = parseInt(rangeMatch[2]);
+                                if (epNumber >= start && epNumber <= end) {
+                                    isMatch = true;
+                                    break;
                                 }
-                                if (isMatch) break;
                             }
-                        }
-                    }
-
-                    if (isMatch) {
-                        let quality = 'Unknown';
-                        if (title.includes('1080p')) quality = '1080p';
-                        else if (title.includes('720p')) quality = '720p';
-                        else if (title.includes('480p')) quality = '480p';
-
-                        let size = '';
-                        const sizeMatch = title.match(/(\d+(?:\.\d+)?)\s*(MB|GB)/i);
-                        if (sizeMatch) size = `${sizeMatch[1]} ${sizeMatch[2].toUpperCase()}`;
-
-                        // Avoid adding duplicate magnets
-                        if (!episode.torrents.find(t => t.link === magnet)) {
-                            episode.torrents.push({ quality, size, link: magnet, filename: title });
+                            if (isMatch) break;
                         }
                     }
                 }
+
+                if (isMatch) {
+                    // Case-insensitive quality extraction using LINK TEXT (title) which has full info
+                    const textToCheck = (title + ' ' + magnet).toUpperCase(); // Combine text and url for best search
+
+                    let quality = 'Unknown';
+                    if (/\b4K\b|2160P/.test(textToCheck)) quality = '4K';
+                    else if (/\b1080P\b/.test(textToCheck)) quality = '1080p';
+                    else if (/\b720P\b/.test(textToCheck)) quality = '720p';
+                    else if (/\b480P\b/.test(textToCheck)) quality = '480p';
+                    else if (/PREDVD|PRE[\s-]?DVD/i.test(textToCheck)) quality = 'PreDVD';
+                    else if (/HDCAM|HD[\s-]?CAM/i.test(textToCheck)) quality = 'HDCam';
+                    else if (/\bHQ\b/i.test(textToCheck)) quality = 'HQ';
+                    else if (/\bHD\b/.test(textToCheck)) quality = 'HD'; // Generic HD fallback
+
+                    let size = '';
+                    const sizeMatch = textToCheck.match(/(\d+(?:\.\d+)?)\s*(GB|MB)/i);
+                    if (sizeMatch) size = `${sizeMatch[1]} ${sizeMatch[2].toUpperCase()}`;
+
+                    // Clean up filename
+                    let cleanFilename = title
+                        .replace(/^(www\.|https?:\/\/)?[a-zA-Z0-9.-]+\.(business|world|watch|org|com|net)\s*[-–—]\s*/gi, '')
+                        .replace(/\.mkv\.torrent$/i, '')
+                        .replace(/\.mkv$/i, '')
+                        .replace(/\.mp4$/i, '')
+                        .replace(/\.torrent$/i, '')
+                        .replace(/–/g, '-')
+                        .trim();
+
+                    // Final cleanup of leading dashes
+                    cleanFilename = cleanFilename.replace(/^[-–—\s]+/, '').trim();
+
+                    // Avoid adding duplicate magnets
+                    if (!episode.torrents.find(t => t.link === magnet)) {
+                        episode.torrents.push({ quality, size, link: magnet, filename: cleanFilename });
+                        console.log(`[MagnetParse] Added: ${quality} | ${size} | ${cleanFilename.substring(0, 40)}...`);
+                    }
+                }
             }
-            // Sort torrents by quality (high to low)
-            const qualOrder = { '1080p': 3, '720p': 2, '480p': 1, 'Unknown': 0 };
-            episode.torrents.sort((a, b) => (qualOrder[b.quality as keyof typeof qualOrder] || 0) - (qualOrder[a.quality as keyof typeof qualOrder] || 0));
+        }
+
+        // Sort torrents by quality (high to low)
+        for (const ep of episodes) {
+            const qualOrder = { '4K': 5, '1080p': 4, '720p': 3, 'PreDVD': 2, 'HQ': 2, 'HD': 2, '480p': 1, 'Unknown': 0 };
+            ep.torrents.sort((a, b) => (qualOrder[b.quality as keyof typeof qualOrder] || 0) - (qualOrder[a.quality as keyof typeof qualOrder] || 0));
         }
 
         // --- PROCESS .TORRENT FILES (add to first/all episodes for movies) ---
         for (const tf of allTorrentFiles) {
-            const text = tf.text.trim();
+            const rawText = tf.text.trim();
             const url = tf.url;
 
             // Skip empty links
-            if (!text || !url) continue;
+            if (!url) continue;
 
-            // Extract quality/size from Text OR Decoded URL OR Context (Proximity Search)
+            // Decode the URL to get filename
             const decodedUrl = decodeURIComponent(url);
-            // Get context (wider range for movies: 200 chars before, 600 chars after)
-            const context = html.substring(Math.max(0, tf.index - 200), Math.min(html.length, tf.index + 600)).toUpperCase();
-            const contentToSearch = (text + ' ' + decodedUrl + ' ' + context).toUpperCase(); // Include context!
+            const urlFilename = decodedUrl.split('/').pop() || '';
 
+            // PRIORITY: Use URL filename if it has more info (typical: site.torrent or full-name.mkv.torrent)
+            // The link TEXT is often truncated, but URL filename has full details
+            let contentToSearch = (rawText + ' ' + urlFilename).toUpperCase();
+
+            // QUALITY EXTRACTION - Order matters! Check specific first
             let quality = 'Unknown';
-            if (contentToSearch.includes('4K') || contentToSearch.includes('2160P')) quality = '4K';
-            else if (contentToSearch.includes('1080P') || contentToSearch.includes('FHD')) quality = '1080p';
-            else if (contentToSearch.includes('720P') || contentToSearch.includes('HD')) quality = '720p';
-            else if (contentToSearch.includes('480P') || contentToSearch.includes('SD')) quality = '480p';
-            else if (contentToSearch.includes('HQ') || contentToSearch.includes('PREDVD')) quality = 'HQ';
+            if (/\b4K\b|2160P/.test(contentToSearch)) quality = '4K';
+            else if (/\b1080P\b/.test(contentToSearch)) quality = '1080p';
+            else if (/\b720P\b/.test(contentToSearch)) quality = '720p';
+            else if (/\b480P\b/.test(contentToSearch)) quality = '480p';
+            else if (/PREDVD|PREDVDRIP|PRE[\s-]?DVD/i.test(contentToSearch)) quality = 'PreDVD';
+            else if (/HDCAM|HD[\s-]?CAM/i.test(contentToSearch)) quality = 'HDCam';
+            else if (/HQ|HIGH[\s-]?QUALITY/i.test(contentToSearch)) quality = 'HQ';
+            // Only fallback to generic HD if "HD" appears but not as part of other terms
+            else if (/\bHD\b/.test(contentToSearch) && !contentToSearch.includes('PREDVD')) quality = 'HD';
 
-            // Extract size from text or URL or context
+            // SIZE EXTRACTION - Match patterns: 2.2GB, 1.5 GB, 700MB, 250 MB
             let size = '';
-            // Match size pattern: 1.2GB, 800MB, 1.2 GB, etc.
-            const sizeMatch = contentToSearch.match(/(\d+(?:\.\d+)?)\s*(MB|GB)/i);
-            if (sizeMatch) size = `${sizeMatch[1]} ${sizeMatch[2].toUpperCase()}`;
-
-            // If text is generic or truncated, use filename from URL
-            let displayName = text;
-            if (text.length < 20 || text.includes('Click here') || text.includes('Download') || !text.includes(' - ')) {
-                const urlFilename = decodedUrl.split('/').pop() || '';
-                if (urlFilename.length > 10) {
-                    // Remove .torrent extension and cleanup
-                    displayName = urlFilename.replace(/\.torrent$/i, '').replace(/\.mkv$/i, '').replace(/\.mp4$/i, '');
-                }
+            const sizeMatch = contentToSearch.match(/(\d+(?:\.\d+)?)\s*(GB|MB)/i);
+            if (sizeMatch) {
+                size = `${sizeMatch[1]} ${sizeMatch[2].toUpperCase()}`;
             }
 
-            // Fix HTML entities (common cause of regex failure)
-            displayName = displayName.replace(/&#8211;/g, '-').replace(/&ndash;/g, '-').replace(/&nbsp;/g, ' ');
+            // DISPLAY NAME - Clean up the filename for display
+            // Priority: Use URL filename (usually more complete), clean it up
+            let displayName = urlFilename.length > rawText.length ? urlFilename : rawText;
 
-            // aggressive cleanup of site prefixes (Handle hyphen, en-dash, em-dash)
-            displayName = displayName.replace(/(www\.|https?:\/\/)[a-zA-Z0-9.-]+\.[a-z]+\s*[-–—]\s*/gi, '')
+            // Remove .torrent, .mkv, .mp4 extensions
+            displayName = displayName
+                .replace(/\.torrent$/i, '')
+                .replace(/\.mkv$/i, '')
+                .replace(/\.mp4$/i, '')
+                .replace(/\.avi$/i, '');
+
+            // Fix HTML entities
+            displayName = displayName
+                .replace(/&#8211;/g, '-')
+                .replace(/&ndash;/g, '-')
+                .replace(/&nbsp;/g, ' ')
+                .replace(/–/g, '-'); // Unicode en-dash
+
+            // Remove site prefix (www.1TamilBlasters.Business – )
+            displayName = displayName
+                .replace(/^(www\.|https?:\/\/)?[a-zA-Z0-9.-]+\.(business|world|watch|org|com|net)\s*[-–—]\s*/gi, '')
                 .trim();
 
-            // Clean leading dashes just in case
-            if (displayName.startsWith('- ')) displayName = displayName.substring(2);
-            if (displayName.startsWith(' - ')) displayName = displayName.substring(3);   // Make URL absolute if relative
+            // Clean leading dashes
+            displayName = displayName.replace(/^[-–—\s]+/, '').trim();
 
             // Make URL absolute if relative
-            const absoluteUrl = url.startsWith('http') ? url : `https://www.1tamilblasters.business${url.startsWith('/') ? '' : '/'}${url}`;
+            const absoluteUrl = url.startsWith('http')
+                ? url
+                : `https://www.1tamilblasters.business${url.startsWith('/') ? '' : '/'}${url}`;
 
             // Add to first episode (for movies) or appropriate episode
             const targetEpisode = episodes[0];
@@ -379,8 +446,10 @@ export async function GET(request: Request) {
                     link: absoluteUrl,
                     filename: displayName
                 });
+                console.log(`[TorrentParse] Added: ${quality} | ${size} | ${displayName.substring(0, 50)}...`);
             }
         }
+
 
         // Sort episodes ascending
         episodes.sort((a, b) => parseInt(a.number) - parseInt(b.number));

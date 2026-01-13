@@ -78,6 +78,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
     const [cleanType, setCleanType] = useState<string>('');
     const [cleanReferer, setCleanReferer] = useState<string>(''); // Store correct referer
     const [cleanCookie, setCleanCookie] = useState<string>(''); // Store session cookie
+    const [cleanUa, setCleanUa] = useState<string>(''); // Store Extracted User-Agent
     const [isExtracting, setIsExtracting] = useState(false);
     const playerRef = useRef<HTMLVideoElement>(null);
 
@@ -86,6 +87,24 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
 
     // Preloader state - warms up iframe in background
     const [iframePreloaded, setIframePreloaded] = useState(false);
+
+    // Turbo Player State - Server switching
+    const [turboServerIndex, setTurboServerIndex] = useState(0);
+    const [extractionProgress, setExtractionProgress] = useState<string>('idle');
+    const [showEpisodeGrid, setShowEpisodeGrid] = useState(true);
+
+    // Helper: Identify server type from URL
+    const getServerInfo = (url: string) => {
+        if (url.includes('luluvid')) return { name: 'Luluvid', icon: '🟢', color: '#10b981', priority: 1 };
+        if (url.includes('hglink') || url.includes('guxhag')) return { name: 'HGLink', icon: '🔵', color: '#3b82f6', priority: 2 };
+        if (url.includes('streamtape')) return { name: 'Streamtape', icon: '🟡', color: '#f59e0b', priority: 3 };
+        if (url.includes('dood')) return { name: 'DoodStream', icon: '🟣', color: '#8b5cf6', priority: 4 };
+        if (url.includes('pstream')) return { name: 'PStream', icon: '🔴', color: '#ef4444', priority: 5 };
+        return { name: 'Server', icon: '⚪', color: '#6b7280', priority: 99 };
+    };
+
+    // Get all available players (from episodes or single watch URL)
+    const availablePlayers = currentEpisode?.players || (watch ? [{ number: 1, url: watch }] : []);
 
     // Reset clean URL and player when episode changes
     useEffect(() => {
@@ -112,9 +131,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                 if (cleanUrl) return; // Already extracted
 
                 setIsExtracting(true);
-                console.log(`[Turbo Extraction] Attempt ${attempt}/3...`);
+                const serverInfo = getServerInfo(effectiveWatch);
+                setExtractionProgress(`Connecting to ${serverInfo.name}...`);
+                console.log(`[Turbo Extraction] Attempt ${attempt}/3 for ${serverInfo.name}...`);
 
                 try {
+                    setExtractionProgress(`Extracting stream (attempt ${attempt}/3)...`);
                     const res = await fetch(`/api/extract?url=${encodeURIComponent(effectiveWatch)}`);
                     const data = await res.json();
 
@@ -125,12 +147,17 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                         // Use header referer if available, else fall back to watch URL
                         setCleanReferer(data.headers?.Referer || watch || '');
                         setCleanCookie(data.headers?.Cookie || '');
+                        setCleanUa(data.headers?.['User-Agent'] || '');
                         setIsExtracting(false);
+                        setExtractionProgress('success');
                         setMode('native-clean');
                         return; // Success - stop retrying
+                    } else {
+                        setExtractionProgress(`Retrying (${attempt}/3)...`);
                     }
                 } catch (e) {
                     console.warn('[Turbo Extraction] Attempt failed:', e);
+                    setExtractionProgress(`Connection failed, retrying...`);
                 }
 
                 // Retry logic (up to 3 attempts with different strategies)
@@ -331,7 +358,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                     `}</style>
 
                     {/* NATIVE - Direct iframe embed */}
-                    {watch && (
+                    {effectiveWatch && (
                         <button
                             className={`mode-btn ${mode === 'native-direct' ? 'mode-active' : ''}`}
                             onClick={() => { setMode('native-direct'); setIframeError(false); }}
@@ -350,7 +377,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                     )}
 
                     {/* TURBO - Clean extracted stream */}
-                    {watch && (
+                    {effectiveWatch && (
                         <button
                             className={`mode-btn ${mode === 'native-clean' ? 'mode-active' : ''}`}
                             onClick={() => { if (cleanUrl) setMode('native-clean'); }}
@@ -575,6 +602,186 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                 </div>
             )}
 
+            {/* 🚀 TURBO SERVER PANEL - Premium Server Switching UI */}
+            {mode === 'native-clean' && availablePlayers.length > 0 && !isFullscreen && (
+                <div style={{
+                    background: 'linear-gradient(180deg, #0a0a1a 0%, #0f0f2a 100%)',
+                    borderBottom: '1px solid #333',
+                    padding: '15px 20px'
+                }}>
+                    <style>{`
+                        @keyframes turbo-pulse {
+                            0%, 100% { box-shadow: 0 0 10px #00C9FF44; }
+                            50% { box-shadow: 0 0 25px #00C9FF88, 0 0 40px #92FE9D44; }
+                        }
+                        @keyframes extraction-spin {
+                            0% { transform: rotate(0deg); }
+                            100% { transform: rotate(360deg); }
+                        }
+                        .turbo-server-btn { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+                        .turbo-server-btn:hover { transform: translateY(-2px); }
+                        .turbo-server-active { animation: turbo-pulse 2s infinite; }
+                    `}</style>
+
+                    {/* Extraction Status Bar */}
+                    {isExtracting && (
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: '12px',
+                            marginBottom: '15px', padding: '12px 16px',
+                            background: 'rgba(0, 201, 255, 0.1)', borderRadius: '8px',
+                            border: '1px solid rgba(0, 201, 255, 0.3)'
+                        }}>
+                            <div style={{
+                                width: '24px', height: '24px', borderRadius: '50%',
+                                border: '3px solid #00C9FF', borderTopColor: 'transparent',
+                                animation: 'extraction-spin 1s linear infinite'
+                            }} />
+                            <span style={{ color: '#00C9FF', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                                {extractionProgress}
+                            </span>
+                            <span style={{ color: '#666', fontSize: '0.8rem', marginLeft: 'auto' }}>
+                                Turbo Mode Active
+                            </span>
+                        </div>
+                    )}
+
+                    {/* Server Selector Grid */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+                        <span style={{
+                            color: '#00C9FF', fontWeight: 'bold', fontSize: '0.9rem',
+                            display: 'flex', alignItems: 'center', gap: '6px', marginRight: '10px'
+                        }}>
+                            <Zap size={18} /> Turbo Servers:
+                        </span>
+
+                        {availablePlayers.map((player, idx) => {
+                            const serverInfo = getServerInfo(player.url);
+                            const isActive = selectedPlayerIndex === idx;
+
+                            return (
+                                <button
+                                    key={idx}
+                                    className={`turbo-server-btn ${isActive ? 'turbo-server-active' : ''}`}
+                                    onClick={() => {
+                                        setSelectedPlayerIndex(idx);
+                                        setCleanUrl(''); // Force re-extraction for new server
+                                        setExtractionProgress('idle');
+                                    }}
+                                    style={{
+                                        background: isActive
+                                            ? `linear-gradient(135deg, ${serverInfo.color}cc, ${serverInfo.color}66)`
+                                            : 'linear-gradient(135deg, #1a1a2e, #252540)',
+                                        color: '#fff',
+                                        border: isActive ? `2px solid ${serverInfo.color}` : '2px solid #333',
+                                        borderRadius: '12px',
+                                        padding: '10px 20px',
+                                        fontWeight: 'bold',
+                                        cursor: 'pointer',
+                                        fontSize: '0.95rem',
+                                        display: 'flex', alignItems: 'center', gap: '8px',
+                                        boxShadow: isActive ? `0 6px 20px ${serverInfo.color}33` : 'none',
+                                    }}
+                                >
+                                    <span style={{ fontSize: '1.2rem' }}>{serverInfo.icon}</span>
+                                    <span>{serverInfo.name}</span>
+                                    {isActive && cleanUrl && (
+                                        <span style={{
+                                            background: '#10b981', padding: '2px 8px', borderRadius: '10px',
+                                            fontSize: '0.7rem', marginLeft: '4px'
+                                        }}>LIVE</span>
+                                    )}
+                                    {isActive && isExtracting && (
+                                        <Loader size={14} style={{ animation: 'extraction-spin 1s linear infinite' }} />
+                                    )}
+                                </button>
+                            );
+                        })}
+
+                        {/* Quick Switch Info */}
+                        {availablePlayers.length > 1 && (
+                            <span style={{ color: '#666', fontSize: '0.8rem', marginLeft: 'auto' }}>
+                                💡 Click to switch servers instantly
+                            </span>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* 📺 EPISODE GRID - Always Visible for Series */}
+            {episodes && episodes.length > 1 && !isFullscreen && (
+                <div style={{
+                    background: '#0a0a12', borderBottom: '1px solid #222',
+                    padding: '15px 20px', maxHeight: '180px', overflowY: 'auto'
+                }}>
+                    <style>{`
+                        .episode-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; }
+                        .episode-card { transition: all 0.2s ease; cursor: pointer; }
+                        .episode-card:hover { transform: scale(1.05); background: #2a2a4a !important; }
+                        .episode-card-active { border-color: #7c3aed !important; background: linear-gradient(135deg, #7c3aed33, #7c3aed11) !important; }
+                        @media (max-width: 600px) { .episode-grid { grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); } }
+                    `}</style>
+
+                    <div style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        marginBottom: '12px'
+                    }}>
+                        <span style={{ color: '#7c3aed', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                            📺 All Episodes ({episodes.length})
+                        </span>
+                        <button
+                            onClick={() => setShowEpisodeGrid(!showEpisodeGrid)}
+                            style={{
+                                background: 'transparent', border: 'none', color: '#666',
+                                cursor: 'pointer', fontSize: '0.8rem'
+                            }}
+                        >
+                            {showEpisodeGrid ? 'Hide ▲' : 'Show ▼'}
+                        </button>
+                    </div>
+
+                    {showEpisodeGrid && (
+                        <div className="episode-grid">
+                            {episodes.map((ep, idx) => {
+                                const isActive = selectedEpisodeIndex === idx;
+                                const hasPlayers = ep.players && ep.players.length > 0;
+
+                                return (
+                                    <button
+                                        key={idx}
+                                        className={`episode-card ${isActive ? 'episode-card-active' : ''}`}
+                                        onClick={() => setSelectedEpisodeIndex(idx)}
+                                        style={{
+                                            background: isActive ? '#7c3aed22' : '#1a1a2e',
+                                            border: `2px solid ${isActive ? '#7c3aed' : '#333'}`,
+                                            borderRadius: '8px',
+                                            padding: '12px 8px',
+                                            color: isActive ? '#fff' : '#aaa',
+                                            fontWeight: 'bold',
+                                            textAlign: 'center',
+                                            position: 'relative'
+                                        }}
+                                    >
+                                        <div style={{ fontSize: '1.1rem' }}>EP{ep.number}</div>
+                                        {isActive && (
+                                            <div style={{
+                                                position: 'absolute', top: '4px', right: '4px',
+                                                width: '8px', height: '8px', borderRadius: '50%',
+                                                background: '#7c3aed'
+                                            }} />
+                                        )}
+                                        {!hasPlayers && (
+                                            <div style={{
+                                                fontSize: '0.6rem', color: '#f59e0b', marginTop: '2px'
+                                            }}>No Stream</div>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Minimal Fullscreen Overlay Controls */}
             {isFullscreen && (
                 <div style={{
@@ -695,7 +902,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
 
                         {/* 🎬 ADVANCED PLAYER - HLS.js + Premium Controls */}
                         <AdvancedPlayer
-                            src={`/api/relay?url=${encodeURIComponent(cleanUrl)}&referer=${encodeURIComponent(cleanReferer)}&cookie=${encodeURIComponent(cleanCookie)}`}
+                            src={`/api/relay?url=${encodeURIComponent(cleanUrl)}&referer=${encodeURIComponent(cleanReferer)}&cookie=${encodeURIComponent(cleanCookie)}&ua=${encodeURIComponent(cleanUa)}`}
                             type={cleanType as 'hls' | 'mp4'}
                             onPlay={onPlay}
                             onPause={onPause}
@@ -720,7 +927,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ magnets, imdb, watch, title, 
                 )}
 
                 {/* NATIVE DIRECT MODE - Fallback to Embed with Hardened Sandbox */}
-                {mode === 'native-direct' && watch && (
+                {mode === 'native-direct' && effectiveWatch && (
                     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
                         <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, display: 'flex', gap: '10px' }}>
                             <div style={{ background: 'rgba(255, 87, 34, 0.9)', padding: '5px 10px', borderRadius: '4px', color: '#fff', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
